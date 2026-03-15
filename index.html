@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Delta Risk Vis · Isometric Corridor Simulator</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+    background: #0f1419;
+    color: #e6edf3;
+    overflow: hidden;
+    height: 100vh;
+  }
+
+  #header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+    padding: 12px 24px;
+    background: linear-gradient(180deg, rgba(15,20,25,0.95) 0%, rgba(15,20,25,0.0) 100%);
+    display: flex; align-items: center; gap: 16px;
+  }
+  #header h1 {
+    font-size: 16px; font-weight: 700; letter-spacing: 1px;
+    color: #58a6ff;
+  }
+  #header .subtitle { font-size: 12px; color: #8b949e; }
+
+  #canvas-container {
+    width: 100vw; height: 100vh;
+  }
+
+  #controls {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
+    padding: 12px 24px 16px;
+    background: linear-gradient(0deg, rgba(15,20,25,0.95) 0%, rgba(15,20,25,0.0) 100%);
+  }
+  #timeline {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 8px;
+  }
+  #timeline button {
+    background: #21262d; border: 1px solid #30363d; color: #e6edf3;
+    border-radius: 6px; padding: 6px 14px; cursor: pointer;
+    font-size: 13px; transition: background 0.15s;
+  }
+  #timeline button:hover { background: #30363d; }
+  #timeline button.active { background: #1f6feb; border-color: #1f6feb; }
+  #slider {
+    flex: 1; height: 4px; -webkit-appearance: none; appearance: none;
+    background: #30363d; border-radius: 2px; outline: none;
+  }
+  #slider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px;
+    background: #58a6ff; border-radius: 50%; cursor: pointer;
+  }
+  #time-label { font-size: 13px; color: #8b949e; min-width: 120px; }
+
+  #stats {
+    display: flex; gap: 24px; font-size: 12px; color: #8b949e;
+  }
+  #stats span { display: flex; align-items: center; gap: 4px; }
+  #stats .dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  #legend {
+    position: fixed; top: 52px; right: 16px; z-index: 10;
+    background: rgba(22,27,34,0.92); border: 1px solid #30363d;
+    border-radius: 8px; padding: 10px 14px;
+    font-size: 11px;
+  }
+  #legend div { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
+  .legend-sq { width: 12px; height: 12px; border-radius: 2px; }
+
+  #loading {
+    position: fixed; inset: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: center;
+    background: #0f1419; font-size: 14px; color: #8b949e;
+  }
+</style>
+</head>
+<body>
+
+<div id="loading">Loading simulation data...</div>
+
+<div id="header">
+  <h1>Delta Risk Vis</h1>
+  <span class="subtitle">River-Constrained Corridor Urbanization · Isometric 3D</span>
+</div>
+
+<div id="legend">
+  <div><span class="legend-sq" style="background:#4DB8D6"></span>Water</div>
+  <div><span class="legend-sq" style="background:#8CD67A"></span>Farmland</div>
+  <div><span class="legend-sq" style="background:#388E3C"></span>Eco reserve</div>
+  <div><span class="legend-sq" style="background:#D64530"></span>Settlement</div>
+  <div><span class="legend-sq" style="background:#E0DCD8"></span>Bare land</div>
+</div>
+
+<div id="canvas-container"></div>
+
+<div id="controls">
+  <div id="timeline">
+    <button id="btn-play" class="active">▶ Play</button>
+    <button id="btn-pause">⏸ Pause</button>
+    <input type="range" id="slider" min="0" max="100" value="0" />
+    <span id="time-label">t = 0 · urban 0.0%</span>
+  </div>
+  <div id="stats">
+    <span><span class="dot" style="background:#58a6ff"></span>mean(u): <b id="stat-mean">0.000</b></span>
+    <span><span class="dot" style="background:#f0883e"></span>urban frac: <b id="stat-frac">0.0%</b></span>
+    <span><span class="dot" style="background:#3fb950"></span>corridor ratio: <b id="stat-ratio">0.00</b></span>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://esm.sh/three@0.162.0",
+    "three/addons/": "https://esm.sh/three@0.162.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+let TILE_W = 1.0;
+const TILE_H = 0.15;
+const COLOURS = {
+  0: new THREE.Color(0xE0DCD8),  // bare
+  1: new THREE.Color(0x8CD67A),  // farmland
+  2: new THREE.Color(0x4DB8D6),  // water
+  3: new THREE.Color(0x388E3C),  // eco
+  4: new THREE.Color(0xD64530),  // settlement
+  5: new THREE.Color(0x607D8B),  // dike
+};
+const HEIGHTS = { 0: 0.0, 1: 0.05, 2: -0.08, 3: 0.12, 4: 0.22, 5: 0.03 };
+
+let simData = null;
+let currentFrame = 0;
+let playing = true;
+let tileMeshes = [];
+let frustum = 22;
+
+const container = document.getElementById('canvas-container');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setClearColor(0x0f1419);
+container.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0f1419, 0.012);
+
+const aspect = window.innerWidth / window.innerHeight;
+const camera = new THREE.OrthographicCamera(
+  -frustum * aspect, frustum * aspect,
+  frustum, -frustum, -100, 200
+);
+camera.position.set(30, 25, 30);
+camera.lookAt(0, 0, 0);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.maxPolarAngle = Math.PI / 2.5;
+controls.minPolarAngle = Math.PI / 8;
+
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
+scene.add(ambientLight);
+const dirLight = new THREE.DirectionalLight(0xfff5e6, 0.9);
+dirLight.position.set(15, 30, 20);
+scene.add(dirLight);
+const fillLight = new THREE.DirectionalLight(0xb0d0ff, 0.25);
+fillLight.position.set(-10, 15, -15);
+scene.add(fillLight);
+
+function buildTerrain(frameIdx) {
+  tileMeshes.forEach(m => scene.remove(m));
+  tileMeshes = [];
+
+  const frame = simData.frames[frameIdx];
+  const { rows, cols } = simData.grid;
+  const tiles = frame.tiles;
+
+  const maxExtent = Math.max(rows, cols);
+  TILE_W = (2 * frustum * 0.92) / maxExtent;
+
+  const halfR = rows / 2, halfC = cols / 2;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const kind = tiles[r][c];
+      const h = HEIGHTS[kind] || 0;
+      const baseH = kind === 4 ? 0.08 + Math.random() * 0.18 : TILE_H;
+
+      const geo = new THREE.BoxGeometry(TILE_W * 0.92, baseH + h, TILE_W * 0.92);
+      const mat = new THREE.MeshLambertMaterial({
+        color: COLOURS[kind] || COLOURS[0],
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+
+      mesh.position.set(
+        (c - halfC) * TILE_W,
+        (baseH + h) / 2,
+        (r - halfR) * TILE_W,
+      );
+
+      if (kind === 4) {
+        const n = 1 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < n; i++) {
+          const bw = 0.15 + Math.random() * 0.2;
+          const bh = 0.1 + Math.random() * 0.25;
+          const bg = new THREE.BoxGeometry(bw, bh, bw);
+          const bm = new THREE.MeshLambertMaterial({
+            color: new THREE.Color().lerpColors(
+              new THREE.Color(0xD64530), new THREE.Color(0xBF360C), Math.random()
+            ),
+          });
+          const box = new THREE.Mesh(bg, bm);
+          box.position.set(
+            (Math.random() - 0.5) * 0.5,
+            (baseH + h) / 2 + bh / 2,
+            (Math.random() - 0.5) * 0.5,
+          );
+          mesh.add(box);
+        }
+      }
+
+      if (kind === 3) {
+        const n = 1 + Math.floor(Math.random() * 2);
+        for (let i = 0; i < n; i++) {
+          const tr = 0.15 + Math.random() * 0.15;
+          const tg = new THREE.SphereGeometry(tr, 6, 6);
+          const tm = new THREE.MeshLambertMaterial({
+            color: new THREE.Color().lerpColors(
+              new THREE.Color(0x2E7D32), new THREE.Color(0x4CAF50), Math.random()
+            ),
+          });
+          const tree = new THREE.Mesh(tg, tm);
+          tree.position.set(
+            (Math.random() - 0.5) * 0.4,
+            (baseH + h) / 2 + tr + 0.02,
+            (Math.random() - 0.5) * 0.4,
+          );
+          mesh.add(tree);
+        }
+      }
+
+      scene.add(mesh);
+      tileMeshes.push(mesh);
+    }
+  }
+}
+
+function updateUI(idx) {
+  const frame = simData.frames[idx];
+  const diag = simData.diagnostics;
+  const t = frame.t;
+  const uf = diag.urban_frac[idx];
+  const mu = diag.mean_u[idx];
+  const cr = diag.corridor_ratio[idx];
+
+  document.getElementById('time-label').textContent =
+    `t = ${t} · urban ${(uf * 100).toFixed(1)}%`;
+  document.getElementById('stat-mean').textContent = mu.toFixed(3);
+  document.getElementById('stat-frac').textContent = (uf * 100).toFixed(1) + '%';
+  document.getElementById('stat-ratio').textContent = cr.toFixed(2);
+
+  const slider = document.getElementById('slider');
+  slider.value = idx;
+}
+
+async function init() {
+  const resp = await fetch('sim_data.json');
+  if (!resp.ok) throw new Error('Failed to load sim_data.json');
+  simData = await resp.json();
+
+  document.getElementById('loading').style.display = 'none';
+
+  const { rows, cols } = simData.grid;
+  frustum = Math.max(rows, cols) * 0.55;
+  camera.left = -frustum * (window.innerWidth / window.innerHeight);
+  camera.right = frustum * (window.innerWidth / window.innerHeight);
+  camera.top = frustum;
+  camera.bottom = -frustum;
+  camera.updateProjectionMatrix();
+
+  const slider = document.getElementById('slider');
+  slider.max = simData.frames.length - 1;
+
+  buildTerrain(0);
+  updateUI(0);
+
+  slider.addEventListener('input', (e) => {
+    currentFrame = parseInt(e.target.value);
+    buildTerrain(currentFrame);
+    updateUI(currentFrame);
+  });
+
+  document.getElementById('btn-play').addEventListener('click', () => {
+    playing = true;
+    document.getElementById('btn-play').classList.add('active');
+    document.getElementById('btn-pause').classList.remove('active');
+  });
+  document.getElementById('btn-pause').addEventListener('click', () => {
+    playing = false;
+    document.getElementById('btn-pause').classList.add('active');
+    document.getElementById('btn-play').classList.remove('active');
+  });
+
+  let lastAdvance = 0;
+  function animate(time) {
+    requestAnimationFrame(animate);
+    controls.update();
+
+    if (playing && time - lastAdvance > 120) {
+      lastAdvance = time;
+      currentFrame = (currentFrame + 1) % simData.frames.length;
+      buildTerrain(currentFrame);
+      updateUI(currentFrame);
+      slider.value = currentFrame;
+    }
+
+    renderer.render(scene, camera);
+  }
+  animate(0);
+}
+
+window.addEventListener('resize', () => {
+  const w = window.innerWidth, h = window.innerHeight;
+  const a = w / h;
+  camera.left = -frustum * a;
+  camera.right = frustum * a;
+  camera.top = frustum;
+  camera.bottom = -frustum;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+});
+
+init().catch(e => {
+  document.getElementById('loading').textContent = 'Failed to load data. ' + e.message;
+});
+</script>
+
+</body>
+</html>

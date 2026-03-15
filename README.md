@@ -12,18 +12,22 @@ This repository provides an interactive isometric simulator for **river-constrai
 
 ## Quick start (view only)
 
-1. Clone the repo and open the web app:
+1. Clone the repo and serve from the **repo root** (so the app at root loads):
    ```bash
    git clone https://github.com/Liu-Zhihang/delta-risk.git
-   cd delta-risk/web
-   ```
-2. Serve the folder locally (required for loading `sim_data.json`):
-   ```bash
+   cd delta-risk
    python -m http.server 8080
    ```
-3. Open http://localhost:8080 in a browser.
+2. Open http://localhost:8080 — you get the **same 3D app** as the live site.
 
-Or deploy `web/` to GitHub Pages / your site (e.g. `yoursite.com/delta-risk-vis`).
+### Deployed site (same as localhost)
+
+The **site root** is the app: `index.html` + `sim_data.json` at repo root. So:
+
+- **https://zhihangliu.cn/delta-risk/** or **https://Liu-Zhihang.github.io/delta-risk/**  
+  → opens the 3D isometric simulator directly (no “说明” page).
+
+Enable GitHub Pages: **Settings** → **Pages** → **Source**: Deploy from branch **main**, folder **/ (root)** → Save.
 
 ## Regenerating simulation data
 
@@ -35,9 +39,10 @@ pip install numpy scipy matplotlib  # optional: use project requirements if pres
 
 python run_rccu.py --preset quick --renderer iso --skip-animation
 python web/export_json.py --npz data/rccu_run.npz --out web/sim_data.json
+cp web/sim_data.json sim_data.json
 ```
 
-Then reload the web app. Outputs (snapshots, npz) are written to `output/` and `data/`.
+Then reload the web app. The root `sim_data.json` is what the deployed site loads. Outputs (snapshots, npz) are in `output/` and `data/`.
 
 ## License
 
