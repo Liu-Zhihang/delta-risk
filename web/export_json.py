@@ -19,7 +19,7 @@ import numpy as np
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from rccu.viz_iso import _classify_tiles
+from rccu.viz_iso import _build_tile_frame_sequence
 
 
 # Match viz_iso denser grid so web and static outputs are consistent
@@ -67,17 +67,18 @@ def main():
     frames_raw = data["frames"]
     t_values = data["t_values"].tolist()
 
-    frame_list = []
     env_native = {}
     for key in ("water_binary", "farmland", "eco_reserve", "dikes"):
         if key in data:
             env_native[key] = data[key]
 
+    frame_list = []
+    tile_frames = _build_tile_frame_sequence(env_native, frames_raw, args.rows, args.cols)
     for i, t in enumerate(t_values):
-        tiles_np, density_np = _classify_tiles(env_native, frames_raw[i], args.rows, args.cols)
-        tiles = tiles_np.tolist()
-        density = np.round(density_np, 3).tolist()
-        frame_list.append({"t": int(t), "tiles": tiles, "density": density})
+        tiles = tile_frames[i]["tiles"].tolist()
+        density = np.round(tile_frames[i]["density"], 3).tolist()
+        height = np.round(tile_frames[i]["height"], 3).tolist()
+        frame_list.append({"t": int(t), "tiles": tiles, "density": density, "height": height})
 
     env_dict = {}
     if env_water is not None:

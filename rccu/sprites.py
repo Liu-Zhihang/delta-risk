@@ -332,24 +332,26 @@ class IsometricSprites:
         height_factor: float,
     ) -> None:
         """Draw a bright modern mid/high-rise cluster that rises with density."""
-        h = float(np.clip(height_factor, 0.0, 1.0)) ** 0.82
+        h = float(np.clip(height_factor, 0.0, 1.0)) ** 0.76
         if h <= 0.02:
             return
         shadow_col = np.array([0.77, 0.54, 0.48, 0.18])
-        _iso_shadow(canvas, int(cx), int(base_y), 18, 8, shadow_col)
+        _iso_shadow(canvas, int(cx), int(base_y), 24, 10, shadow_col)
 
         podium_roof = np.array([0.99, 0.94, 0.90, 0.95])
         podium_front = np.array([0.93, 0.82, 0.76, 0.95])
         podium_side = np.array([0.88, 0.72, 0.66, 0.95])
-        _iso_box(canvas, int(cx + 1), int(base_y + 1), 18, 6, 6 + int(h * 5), podium_roof, podium_front, podium_side)
+        _iso_box(canvas, int(cx + 1), int(base_y + 1), 24, 9, 12 + int(h * 14), podium_roof, podium_front, podium_side)
 
         clusters = []
-        if h > 0.10:
-            clusters.append((0, 0, 18, 8, 10 + int(h * 34)))
-        if h > 0.24:
-            clusters.append((-13, 1, 11, 5, 7 + int(h * 16)))
-        if h > 0.48:
-            clusters.append((12, -1, 10, 5, 7 + int(h * 15)))
+        if h > 0.08:
+            clusters.append((0, 0, 24, 10, 24 + int(h * 96)))
+        if h > 0.20:
+            clusters.append((-16, 2, 15, 7, 12 + int(h * 42)))
+        if h > 0.40:
+            clusters.append((16, -1, 14, 6, 11 + int(h * 36)))
+        if h > 0.72:
+            clusters.append((1, -7, 10, 5, 10 + int(h * 22)))
 
         for i, (dx, dy, bw, bh, depth) in enumerate(clusters):
             roof = C_URBAN_ROOF.copy()

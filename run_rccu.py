@@ -43,7 +43,7 @@ PRESETS = {
         "render":  RenderPreset(fig_width=16, fig_height=9, dpi=150, fps=24),
     },
     "web": {
-        "physics": PhysicsParams(nx=320, ny=220, n_steps=2800, save_every=8, dt=0.024, densify_rate=0.32),
+        "physics": PhysicsParams(nx=320, ny=220, n_steps=4200, save_every=10, dt=0.024, densify_rate=0.34),
         "render":  RenderPreset(fig_width=15, fig_height=8.5, dpi=130, fps=18),
     },
     "cinematic": {

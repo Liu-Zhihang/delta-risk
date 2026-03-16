@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>RCCU · Isometric Corridor Simulator</title>
+<title>RCCU</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   :root {
@@ -37,7 +37,8 @@
     padding: 16px 28px;
     background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(255,255,255,0.72) 52%, rgba(255,255,255,0) 100%);
     display: flex;
-    align-items: baseline;
+    align-items: center;
+    justify-content: space-between;
     gap: 14px;
   }
   #header h1 {
@@ -46,9 +47,23 @@
     letter-spacing: 1.2px;
     color: var(--accent);
   }
-  #header .subtitle {
+  #theme-toggle {
+    display: flex;
+    gap: 8px;
+  }
+  .theme-btn {
+    background: rgba(255,255,255,0.92);
+    border: 1px solid var(--line);
+    color: var(--text);
+    border-radius: 999px;
+    padding: 6px 12px;
     font-size: 12px;
-    color: var(--muted);
+    cursor: pointer;
+  }
+  .theme-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
   }
 
   #legend {
@@ -167,6 +182,23 @@
     font-size: 14px;
     color: var(--muted);
   }
+  body[data-theme="night"] {
+    --bg: #08111c;
+    --panel: rgba(10, 20, 32, 0.92);
+    --line: #29425a;
+    --text: #edf5ff;
+    --muted: #9eb3c9;
+    --accent: #8fc7ff;
+  }
+  body[data-theme="night"] #canvas-container,
+  body[data-theme="night"] #loading {
+    background: #08111c;
+  }
+  body[data-theme="night"] #timeline button,
+  body[data-theme="night"] #speed-select,
+  body[data-theme="night"] .theme-btn {
+    background: rgba(12, 24, 38, 0.92);
+  }
 </style>
 </head>
 <body>
@@ -175,7 +207,10 @@
 
 <div id="header">
   <h1>RCCU</h1>
-  <span class="subtitle">Bright isometric corridor emergence viewer</span>
+  <div id="theme-toggle">
+    <button id="btn-day" class="theme-btn active">Day</button>
+    <button id="btn-night" class="theme-btn">Night</button>
+  </div>
 </div>
 
 <div id="legend">
@@ -233,6 +268,78 @@ let dpr = Math.min(window.devicePixelRatio || 1, 2);
 let tileW = 22;
 let tileH = 11;
 let board = null;
+let themeMode = 'day';
+const view = {
+  scale: 1,
+  offsetX: 0,
+  offsetY: 0,
+  dragging: false,
+  lastX: 0,
+  lastY: 0,
+};
+
+const SCENE = {
+  day: {
+    bg: '#ffffff',
+    shadow: 'rgba(175, 193, 211, 0.10)',
+    water: '#71c7ff',
+    waterEdge: '#3b9de0',
+    waterShine: 'rgba(255,255,255,0.65)',
+    farmTop: '#9be17f',
+    farmLeft: '#75c766',
+    farmRight: '#5fbf5c',
+    farmLine: 'rgba(255,255,255,0.35)',
+    ecoTop: '#4ba24d',
+    ecoLeft: '#2e7b34',
+    ecoRight: '#2b8a35',
+    bareTop: '#f0e8e2',
+    bareLeft: '#e4d8cf',
+    bareRight: '#dcccc0',
+    urbanPodiumTop: '#f8ece6',
+    urbanPodiumLeft: '#f0cdc0',
+    urbanPodiumRight: '#e7b19a',
+    urbanMainTop: '#fff2eb',
+    urbanMainLeft: '#f4ddd2',
+    urbanMainRight: '#e8bca5',
+    urbanTowerTop: '#ff845b',
+    urbanTowerTopAlt: '#ff9f7b',
+    urbanTowerLeft: '#fae7dd',
+    urbanTowerLeftAlt: '#f6dbd0',
+    urbanTowerRight: '#d79b80',
+    urbanTowerRightAlt: '#e0b29b',
+    urbanGlass: 'rgba(120, 201, 255, 0.66)',
+  },
+  night: {
+    bg: '#08111c',
+    shadow: 'rgba(18, 27, 39, 0.42)',
+    water: '#2e86ff',
+    waterEdge: '#8fd1ff',
+    waterShine: 'rgba(222,240,255,0.55)',
+    farmTop: '#5d9651',
+    farmLeft: '#447542',
+    farmRight: '#3e6841',
+    farmLine: 'rgba(255,255,255,0.12)',
+    ecoTop: '#2f6f40',
+    ecoLeft: '#225333',
+    ecoRight: '#204d30',
+    bareTop: '#6a6770',
+    bareLeft: '#55515a',
+    bareRight: '#4b4750',
+    urbanPodiumTop: '#f1e3dc',
+    urbanPodiumLeft: '#d9b6a9',
+    urbanPodiumRight: '#bd8e7d',
+    urbanMainTop: '#ffe9dd',
+    urbanMainLeft: '#efcfbf',
+    urbanMainRight: '#d9a78f',
+    urbanTowerTop: '#ff8a5c',
+    urbanTowerTopAlt: '#ffac8e',
+    urbanTowerLeft: '#f6e1d7',
+    urbanTowerLeftAlt: '#f0d2c7',
+    urbanTowerRight: '#cf957a',
+    urbanTowerRightAlt: '#d7a58e',
+    urbanGlass: 'rgba(148, 217, 255, 0.78)',
+  },
+};
 
 function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
@@ -298,10 +405,10 @@ function computeBoardLayout() {
 
   const boardW = (rows + cols) * tileW * 0.5;
   const boardH = (rows + cols) * tileH * 0.5;
-  const maxTowerH = tileH * 6.2;
+  const maxTowerH = tileH * 13.8;
   board = {
     originX: window.innerWidth / 2,
-    originY: 72 + maxTowerH * 0.74,
+    originY: 54 + maxTowerH * 0.96,
     width: boardW,
     height: boardH,
     maxTowerH,
@@ -371,9 +478,10 @@ function drawPrism(x, y, w, h, lift, top, left, right, outline = null) {
 }
 
 function drawWater(x, y) {
-  drawDiamond(x, y + tileH * 0.08, tileW, tileH, '#71c7ff', '#3b9de0');
+  const scene = SCENE[themeMode];
+  drawDiamond(x, y + tileH * 0.08, tileW, tileH, scene.water, scene.waterEdge);
   ctx.save();
-  ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+  ctx.strokeStyle = scene.waterShine;
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(x - tileW * 0.18, y);
@@ -383,9 +491,10 @@ function drawWater(x, y) {
 }
 
 function drawFarmland(x, y, r, c) {
-  drawPrism(x, y, tileW, tileH, tileH * 0.20, '#9be17f', '#75c766', '#5fbf5c', 'rgba(255,255,255,0.35)');
+  const scene = SCENE[themeMode];
+  drawPrism(x, y, tileW, tileH, tileH * 0.20, scene.farmTop, scene.farmLeft, scene.farmRight, scene.farmLine);
   ctx.save();
-  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.strokeStyle = scene.farmLine;
   ctx.lineWidth = 0.9;
   for (let i = -2; i <= 2; i++) {
     const phase = hash01(r, c, i);
@@ -398,7 +507,8 @@ function drawFarmland(x, y, r, c) {
 }
 
 function drawEco(x, y, r, c) {
-  drawPrism(x, y, tileW, tileH, tileH * 0.24, '#4ba24d', '#2e7b34', '#2b8a35');
+  const scene = SCENE[themeMode];
+  drawPrism(x, y, tileW, tileH, tileH * 0.24, scene.ecoTop, scene.ecoLeft, scene.ecoRight);
   const n = 2 + Math.round(hash01(r, c, 5) * 1.5);
   for (let i = 0; i < n; i++) {
     const dx = (hash01(r, c, 20 + i) - 0.5) * tileW * 0.28;
@@ -413,9 +523,10 @@ function drawEco(x, y, r, c) {
   }
 }
 
-function drawSettlement(x, y, density, r, c) {
-  const podiumLift = tileH * 0.30;
-  drawPrism(x, y, tileW, tileH, podiumLift, '#f8ece6', '#f0cdc0', '#e7b19a', 'rgba(255,255,255,0.48)');
+function drawSettlement(x, y, density, heightVal, r, c) {
+  const scene = SCENE[themeMode];
+  const podiumLift = tileH * 0.34;
+  drawPrism(x, y, tileW, tileH, podiumLift, scene.urbanPodiumTop, scene.urbanPodiumLeft, scene.urbanPodiumRight, 'rgba(255,255,255,0.48)');
 
   ctx.save();
   ctx.fillStyle = 'rgba(197, 108, 67, 0.12)';
@@ -424,29 +535,33 @@ function drawSettlement(x, y, density, r, c) {
   ctx.fill();
   ctx.restore();
 
-  const h = Math.pow(clamp(density, 0, 1), 0.84);
+  const h = Math.pow(clamp(heightVal ?? density, 0, 1), 0.76);
+  const compact = Math.pow(clamp(density, 0, 1), 0.88);
 
   drawPrism(
     x + tileW * 0.02,
     y - podiumLift * 0.46,
     tileW * 0.54,
     tileH * 0.24,
-    tileH * (0.26 + h * 0.42),
-    '#fff2eb',
-    '#f4ddd2',
-    '#e8bca5',
+    tileH * (0.35 + h * 0.58),
+    scene.urbanMainTop,
+    scene.urbanMainLeft,
+    scene.urbanMainRight,
     null
   );
 
   const towers = [];
-  if (h > 0.10) {
-    towers.push({ dx: 0, dy: 0, w: tileW * 0.50, d: tileH * 0.42, h: tileH * (1.0 + h * 3.8) });
+  if (h > 0.06) {
+    towers.push({ dx: 0, dy: 0, w: tileW * 0.56, d: tileH * 0.46, h: tileH * (1.8 + h * 9.4) });
   }
-  if (h > 0.24) {
-    towers.push({ dx: -tileW * 0.18, dy: tileH * 0.05, w: tileW * 0.30, d: tileH * 0.28, h: tileH * (0.8 + h * 1.9) });
+  if (h > 0.18 || compact > 0.42) {
+    towers.push({ dx: -tileW * 0.20, dy: tileH * 0.05, w: tileW * 0.34, d: tileH * 0.30, h: tileH * (1.1 + h * 4.8) });
   }
-  if (h > 0.48) {
-    towers.push({ dx: tileW * 0.20, dy: -tileH * 0.03, w: tileW * 0.28, d: tileH * 0.26, h: tileH * (0.7 + h * 1.8) });
+  if (h > 0.38) {
+    towers.push({ dx: tileW * 0.22, dy: -tileH * 0.03, w: tileW * 0.32, d: tileH * 0.28, h: tileH * (1.0 + h * 4.2) });
+  }
+  if (h > 0.72) {
+    towers.push({ dx: tileW * 0.02, dy: -tileH * 0.20, w: tileW * 0.22, d: tileH * 0.22, h: tileH * (0.9 + h * 2.5) });
   }
 
   towers.forEach((t, i) => {
@@ -454,14 +569,14 @@ function drawSettlement(x, y, density, r, c) {
     const bx = x + t.dx + jitter;
     const by = y - podiumLift * 0.9 + t.dy;
     const lift = t.h;
-    const top = i === 0 ? '#ff845b' : '#ff9f7b';
-    const left = i === 0 ? '#fae7dd' : '#f6dbd0';
-    const right = i === 0 ? '#d79b80' : '#e0b29b';
+    const top = i === 0 ? scene.urbanTowerTop : scene.urbanTowerTopAlt;
+    const left = i === 0 ? scene.urbanTowerLeft : scene.urbanTowerLeftAlt;
+    const right = i === 0 ? scene.urbanTowerRight : scene.urbanTowerRightAlt;
     drawPrism(bx, by, t.w, t.d, lift, top, left, right);
 
     const windows = Math.max(2, Math.floor(lift / (tileH * 0.62)));
     ctx.save();
-    ctx.fillStyle = 'rgba(120, 201, 255, 0.66)';
+    ctx.fillStyle = scene.urbanGlass;
     for (let k = 0; k < windows; k++) {
       const wy = by - lift + t.d * 0.55 + k * tileH * 0.44;
       ctx.fillRect(bx - t.w * 0.22, wy, t.w * 0.10, tileH * 0.11);
@@ -472,7 +587,8 @@ function drawSettlement(x, y, density, r, c) {
 }
 
 function drawBare(x, y) {
-  drawPrism(x, y, tileW, tileH, tileH * 0.14, '#f0e8e2', '#e4d8cf', '#dcccc0', 'rgba(180,150,135,0.22)');
+  const scene = SCENE[themeMode];
+  drawPrism(x, y, tileW, tileH, tileH * 0.14, scene.bareTop, scene.bareLeft, scene.bareRight, 'rgba(180,150,135,0.22)');
 }
 
 function renderFrame(idx) {
@@ -483,7 +599,8 @@ function renderFrame(idx) {
   const height = window.innerHeight;
   ctx.clearRect(0, 0, width, height);
 
-  ctx.fillStyle = '#ffffff';
+  const scene = SCENE[themeMode];
+  ctx.fillStyle = scene.bg;
   ctx.fillRect(0, 0, width, height);
 
   const frame = simData.frames[idx];
@@ -491,7 +608,9 @@ function renderFrame(idx) {
   const cols = simData.grid.cols;
 
   ctx.save();
-  ctx.fillStyle = 'rgba(175, 193, 211, 0.10)';
+  ctx.translate(view.offsetX, view.offsetY);
+  ctx.scale(view.scale, view.scale);
+  ctx.fillStyle = scene.shadow;
   ctx.beginPath();
   ctx.ellipse(
     board.originX,
@@ -509,6 +628,7 @@ function renderFrame(idx) {
     for (let c = 0; c < cols; c++) {
       const kind = frame.tiles[r][c];
       const density = frame.density?.[r]?.[c] || 0;
+      const heightVal = frame.height?.[r]?.[c] ?? density;
       const { x, y } = isoPoint(r, c);
       if (kind === 2) {
         drawWater(x, y);
@@ -517,12 +637,13 @@ function renderFrame(idx) {
       } else if (kind === 3) {
         drawEco(x, y, r, c);
       } else if (kind === 4) {
-        drawSettlement(x, y, density, r, c);
+        drawSettlement(x, y, density, heightVal, r, c);
       } else {
         drawBare(x, y);
       }
     }
   }
+  ctx.restore();
 }
 
 function updateUI(idx) {
@@ -540,12 +661,76 @@ function updateUI(idx) {
   document.getElementById('slider').value = idx;
 }
 
+function setTheme(mode) {
+  themeMode = mode;
+  document.body.dataset.theme = mode;
+  document.getElementById('btn-day').classList.toggle('active', mode === 'day');
+  document.getElementById('btn-night').classList.toggle('active', mode === 'night');
+  renderFrame(currentFrame);
+}
+
+function resetView() {
+  view.scale = 1;
+  view.offsetX = 0;
+  view.offsetY = 0;
+}
+
+function attachCanvasNavigation() {
+  canvas.addEventListener('pointerdown', (e) => {
+    view.dragging = true;
+    view.lastX = e.clientX;
+    view.lastY = e.clientY;
+    canvas.style.cursor = 'grabbing';
+    canvas.setPointerCapture(e.pointerId);
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    if (!view.dragging) return;
+    view.offsetX += e.clientX - view.lastX;
+    view.offsetY += e.clientY - view.lastY;
+    view.lastX = e.clientX;
+    view.lastY = e.clientY;
+    renderFrame(currentFrame);
+  });
+
+  canvas.addEventListener('pointerup', () => {
+    view.dragging = false;
+    canvas.style.cursor = 'grab';
+  });
+  canvas.addEventListener('pointerleave', () => {
+    if (!view.dragging) {
+      canvas.style.cursor = 'grab';
+    }
+  });
+
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const prev = view.scale;
+    const next = clamp(prev * (e.deltaY < 0 ? 1.08 : 0.92), 0.65, 2.80);
+    if (Math.abs(next - prev) < 1e-6) return;
+    const wx = (e.clientX - view.offsetX) / prev;
+    const wy = (e.clientY - view.offsetY) / prev;
+    view.scale = next;
+    view.offsetX = e.clientX - wx * next;
+    view.offsetY = e.clientY - wy * next;
+    renderFrame(currentFrame);
+  }, { passive: false });
+
+  canvas.addEventListener('dblclick', () => {
+    resetView();
+    renderFrame(currentFrame);
+  });
+
+  canvas.style.cursor = 'grab';
+}
+
 async function init() {
   const resp = await fetch('sim_data.json');
   simData = await resp.json();
   document.getElementById('loading').style.display = 'none';
 
   computeBoardLayout();
+  attachCanvasNavigation();
   const slider = document.getElementById('slider');
   slider.max = simData.frames.length - 1;
 
@@ -568,7 +753,10 @@ async function init() {
   document.getElementById('speed-select').addEventListener('change', (e) => {
     playSpeed = parseFloat(e.target.value);
   });
+  document.getElementById('btn-day').addEventListener('click', () => setTheme('day'));
+  document.getElementById('btn-night').addEventListener('click', () => setTheme('night'));
 
+  setTheme('day');
   renderFrame(0);
   updateUI(0);
 

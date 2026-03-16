@@ -23,7 +23,7 @@ import matplotlib.gridspec as gridspec
 import numpy as np
 from matplotlib import animation
 from matplotlib.patches import Patch
-from scipy.ndimage import gaussian_filter, zoom
+from scipy.ndimage import gaussian_filter, uniform_filter, zoom
 
 from .config import Palette, RenderPreset, _hex
 from .sprites import IsometricSprites
@@ -105,6 +105,52 @@ def _classify_tiles(
     return grid, density
 
 
+def _build_tile_frame_sequence(
+    env: Dict[str, np.ndarray],
+    frames: np.ndarray,
+    tile_rows: int,
+    tile_cols: int,
+):
+    """
+    Build per-frame tile, density and height grids.
+
+    Height is not driven by instantaneous density alone. It combines:
+    - local built density
+    - urban age (older settled tiles rise higher)
+    - neighbourhood clustering (larger urban bundles read more city-like)
+    """
+    n_frames = len(frames)
+    first_seen = np.full((tile_rows, tile_cols), -1, dtype=np.int32)
+    denom = max(1, n_frames - 1)
+    sequence = []
+
+    for i, u_field in enumerate(frames):
+        tiles, density = _classify_tiles(env, u_field, tile_rows, tile_cols)
+        settled = tiles == 4
+        new_settled = settled & (first_seen < 0)
+        first_seen[new_settled] = i
+
+        age = np.zeros_like(density, dtype=np.float32)
+        valid = first_seen >= 0
+        age[valid] = (i - first_seen[valid]) / denom
+
+        cluster = uniform_filter(settled.astype(np.float32), size=3, mode="nearest")
+        height = np.zeros_like(density, dtype=np.float32)
+        if np.any(settled):
+            dens_term = np.power(np.clip(density[settled], 0.0, 1.0), 0.90)
+            age_term = np.power(np.clip(age[settled], 0.0, 1.0), 0.72)
+            cluster_term = np.power(np.clip(cluster[settled], 0.0, 1.0), 0.85)
+            height[settled] = np.clip(
+                0.06 + 0.24 * dens_term + 0.92 * age_term + 0.20 * cluster_term,
+                0.0,
+                1.0,
+            )
+
+        sequence.append({"tiles": tiles, "density": density, "height": height})
+
+    return sequence
+
+
 _KIND_MAP = {0: "bare", 1: "farmland", 2: "water", 3: "eco", 4: "settlement", 5: "dike"}
 
 
@@ -175,6 +221,7 @@ class IsometricRenderer:
         tile_grid: np.ndarray,
         env: Optional[Dict[str, np.ndarray]] = None,
         density_grid: Optional[np.ndarray] = None,
+        height_grid: Optional[np.ndarray] = None,
     ) -> np.ndarray:
         """Render a full isometric image with bright white background and vertical urban growth."""
         rows, cols = tile_grid.shape
@@ -183,7 +230,7 @@ class IsometricRenderer:
         tw, th = self.sprites.tile_screen_size()
 
         offset_x = max(0, (cols - rows) * hw)
-        top_pad = 84
+        top_pad = 220
         canvas_w = (rows + cols) * hw + tw + offset_x + 24
         canvas_h = (rows + cols) * hh + th + top_pad + 24
         canvas = np.ones((canvas_h, canvas_w, 4), dtype=np.float64)
@@ -202,6 +249,7 @@ class IsometricRenderer:
                 py = sy + top_pad
 
                 dens = 0.0 if density_grid is None else float(density_grid[r, c])
+                tower_h = dens if height_grid is None else float(height_grid[r, c])
                 if kind == "water":
                     py += 3
                 elif kind == "settlement":
@@ -225,8 +273,8 @@ class IsometricRenderer:
 
                 draw_sprite_at(py)
                 if kind == "settlement":
-                    dens = np.clip(0.16 + dens * 1.26, 0.0, 1.0)
-                    self.sprites.draw_tower(canvas, px + sw / 2, py + sh, dens)
+                    tower_h = np.clip(0.16 + tower_h * 1.55, 0.0, 1.0)
+                    self.sprites.draw_tower(canvas, px + sw / 2, py + sh, tower_h)
 
         return np.clip(canvas[..., :3], 0, 1)
 
@@ -262,9 +310,16 @@ class IsometricRenderer:
         )
         fig.subplots_adjust(wspace=0.04, hspace=0.12, left=0.01, right=0.99, top=0.90, bottom=0.06)
 
+        frame_tiles = _build_tile_frame_sequence(env, frames, self.tile_rows, self.tile_cols)
+
         for ax, idx in zip(axes.flat, idxs):
-            tile_grid, density_grid = _classify_tiles(env, frames[idx], self.tile_rows, self.tile_cols)
-            img = self._compose_iso_image(tile_grid, env=env, density_grid=density_grid)
+            frame = frame_tiles[idx]
+            img = self._compose_iso_image(
+                frame["tiles"],
+                env=env,
+                density_grid=frame["density"],
+                height_grid=frame["height"],
+            )
             ax.imshow(img, interpolation="bilinear", aspect="equal")
             ax.set_xticks([]); ax.set_yticks([])
             for sp in ax.spines.values():
@@ -310,9 +365,16 @@ class IsometricRenderer:
         # (blue water tiles, farmland grid, single tower height). No separate path.
         print("  Pre-rendering isometric frames ...")
         iso_frames = []
-        for i in range(n_frames):
-            tg, dens = _classify_tiles(env, frames[i], self.tile_rows, self.tile_cols)
-            iso_frames.append(self._compose_iso_image(tg, env=env, density_grid=dens))
+        frame_tiles = _build_tile_frame_sequence(env, frames, self.tile_rows, self.tile_cols)
+        for frame in frame_tiles:
+            iso_frames.append(
+                self._compose_iso_image(
+                    frame["tiles"],
+                    env=env,
+                    density_grid=frame["density"],
+                    height_grid=frame["height"],
+                )
+            )
 
         fig = plt.figure(
             figsize=(self.p.fig_width, self.p.fig_height),
