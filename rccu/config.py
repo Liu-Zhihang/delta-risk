@@ -115,6 +115,10 @@ class PhysicsParams:
     noise_sigma: float = 0.015
     noise_corr_len: float = 1.2
 
+    # Densification: already-urban cells continue growing toward higher intensity,
+    # which the 3D renderers map to taller blocks.
+    densify_rate: float = 0.26
+
     n_main_channels: int = 8         # delta-like: more main distributaries
     n_tributaries: int = 28          # dense tributary network
     n_sub_tributaries: int = 40      # fine sub-channels (delta anastomosing)

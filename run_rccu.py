@@ -6,7 +6,7 @@ Usage (toy mode, quick test):
     python run_rccu.py --preset quick
 
 Usage (toy mode, isometric + web export):
-    python run_rccu.py --preset quick --renderer iso --skip-animation
+    python run_rccu.py --preset web --renderer iso --skip-animation
     python web/export_json.py --npz data/rccu_run.npz --out web/sim_data.json
 """
 
@@ -35,15 +35,19 @@ DATA_ROOT = Path(__file__).resolve().parent / "data"
 
 PRESETS = {
     "quick": {
-        "physics": PhysicsParams(nx=320, ny=220, n_steps=1200, save_every=6, dt=0.026),
+        "physics": PhysicsParams(nx=320, ny=220, n_steps=1400, save_every=7, dt=0.026, densify_rate=0.24),
         "render":  RenderPreset(fig_width=15, fig_height=8.5, dpi=130, fps=20),
     },
     "standard": {
-        "physics": PhysicsParams(nx=480, ny=340, n_steps=2000, save_every=5, dt=0.024),
+        "physics": PhysicsParams(nx=480, ny=340, n_steps=2600, save_every=6, dt=0.024, densify_rate=0.28),
         "render":  RenderPreset(fig_width=16, fig_height=9, dpi=150, fps=24),
     },
+    "web": {
+        "physics": PhysicsParams(nx=320, ny=220, n_steps=2800, save_every=8, dt=0.024, densify_rate=0.32),
+        "render":  RenderPreset(fig_width=15, fig_height=8.5, dpi=130, fps=18),
+    },
     "cinematic": {
-        "physics": PhysicsParams(nx=640, ny=440, n_steps=3000, save_every=6, dt=0.020),
+        "physics": PhysicsParams(nx=640, ny=440, n_steps=4200, save_every=8, dt=0.020, densify_rate=0.30),
         "render":  RenderPreset(fig_width=19.2, fig_height=10.8, dpi=180, fps=30),
     },
 }
@@ -57,10 +61,16 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--mode", choices=["toy", "raster"], default="toy",
                    help="'toy' = procedural delta; 'raster' = real GeoTIFF data")
     p.add_argument("--preset", choices=list(PRESETS.keys()), default="standard",
-                   help="Quality preset (quick / standard / cinematic)")
+                   help="Quality preset (quick / standard / web / cinematic)")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--boundary", choices=["neumann", "periodic"], default="neumann",
                    help="Spatial boundary condition for PDE finite differences")
+    p.add_argument("--n-steps", type=int, default=None,
+                   help="Override number of simulation steps")
+    p.add_argument("--save-every", type=int, default=None,
+                   help="Override snapshot stride")
+    p.add_argument("--densify-rate", type=float, default=None,
+                   help="Override urban densification rate (higher => taller final buildings)")
 
     g = p.add_argument_group("real-data paths (raster mode)")
     g.add_argument("--constraint-raster", type=Path)
@@ -86,6 +96,12 @@ def main() -> None:
     render: RenderPreset = preset["render"]
     params.seed = args.seed
     params.boundary_mode = args.boundary
+    if args.n_steps is not None:
+        params.n_steps = args.n_steps
+    if args.save_every is not None:
+        params.save_every = args.save_every
+    if args.densify_rate is not None:
+        params.densify_rate = args.densify_rate
 
     out_dir = args.out_dir or OUT_ROOT
     data_dir = DATA_ROOT
@@ -99,6 +115,8 @@ def main() -> None:
     print(f"  Preset   : {args.preset}")
     print(f"  Grid     : {params.nx} × {params.ny}")
     print(f"  Steps    : {params.n_steps}")
+    print(f"  Save/every: {params.save_every}")
+    print(f"  Densify  : {params.densify_rate:.2f}")
     print(f"  Seed     : {params.seed}")
     print(f"  Boundary : {params.boundary_mode}")
     print(f"  Output   : {out_dir}")

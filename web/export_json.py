@@ -16,12 +16,15 @@ import json
 from pathlib import Path
 
 import numpy as np
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from rccu.viz_iso import _classify_tiles
 
 
 # Match viz_iso denser grid so web and static outputs are consistent
 TILE_ROWS = 48
 TILE_COLS = 72
-U_THRESHOLD = 0.40
 
 
 def downsample_field(field: np.ndarray, rows: int, cols: int) -> np.ndarray:
@@ -34,20 +37,6 @@ def downsample_field(field: np.ndarray, rows: int, cols: int) -> np.ndarray:
             x0, x1 = int(c * sx), int(min((c + 1) * sx, nx))
             out[r, c] = float(field[y0:y1, x0:x1].mean())
     return out
-
-
-def classify_tile(water: float, urban: float, eco: float, farm: float, dike: float) -> int:
-    if water > 0.40:
-        return 2
-    if urban > U_THRESHOLD:
-        return 4
-    if eco > 0.40:
-        return 3
-    if dike > 0.35:
-        return 5
-    if farm > 0.20:
-        return 1
-    return 0
 
 
 def main():
@@ -79,20 +68,16 @@ def main():
     t_values = data["t_values"].tolist()
 
     frame_list = []
+    env_native = {}
+    for key in ("water_binary", "farmland", "eco_reserve", "dikes"):
+        if key in data:
+            env_native[key] = data[key]
+
     for i, t in enumerate(t_values):
-        u_down = downsample_field(frames_raw[i], args.rows, args.cols)
-        tiles = []
-        for r in range(args.rows):
-            row = []
-            for c in range(args.cols):
-                w = float(env_water[r, c]) if env_water is not None else 0.0
-                f = float(env_farm[r, c]) if env_farm is not None else 0.0
-                e = float(env_eco[r, c]) if env_eco is not None else 0.0
-                d = float(env_dikes[r, c]) if env_dikes is not None else 0.0
-                u = float(u_down[r, c])
-                row.append(classify_tile(w, u, e, f, d))
-            tiles.append(row)
-        frame_list.append({"t": int(t), "tiles": tiles})
+        tiles_np, density_np = _classify_tiles(env_native, frames_raw[i], args.rows, args.cols)
+        tiles = tiles_np.tolist()
+        density = np.round(density_np, 3).tolist()
+        frame_list.append({"t": int(t), "tiles": tiles, "density": density})
 
     env_dict = {}
     if env_water is not None:

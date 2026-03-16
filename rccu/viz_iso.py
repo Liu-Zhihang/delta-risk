@@ -23,7 +23,7 @@ import matplotlib.gridspec as gridspec
 import numpy as np
 from matplotlib import animation
 from matplotlib.patches import Patch
-from scipy.ndimage import zoom
+from scipy.ndimage import gaussian_filter, zoom
 
 from .config import Palette, RenderPreset, _hex
 from .sprites import IsometricSprites
@@ -38,10 +38,11 @@ def _classify_tiles(
     u_field: np.ndarray,
     tile_rows: int,
     tile_cols: int,
-) -> np.ndarray:
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     Downsample continuous fields to a (tile_rows, tile_cols) grid and
     assign each tile a class: 0=bare, 1=farmland, 2=water, 3=eco, 4=settlement, 5=dike.
+    Also return density_grid: mean u in [0,1] for settlement tiles, 0 otherwise (for "height").
     """
     ny, nx = u_field.shape
     sy, sx = ny / tile_rows, nx / tile_cols
@@ -52,6 +53,7 @@ def _classify_tiles(
     dikes = env.get("dikes", np.zeros_like(u_field))
 
     grid = np.zeros((tile_rows, tile_cols), dtype=np.int32)
+    density = np.zeros((tile_rows, tile_cols), dtype=np.float32)
 
     for r in range(tile_rows):
         y0, y1 = int(r * sy), int(min((r + 1) * sy, ny))
@@ -73,16 +75,34 @@ def _classify_tiles(
                 grid[r, c] = 2   # water
             elif mu > _U_THRESHOLD:
                 grid[r, c] = 4   # settlement
+                density[r, c] = min(1.0, (mu - _U_THRESHOLD) / (1.0 - _U_THRESHOLD))  # 0..1
             elif me > 0.40:
                 grid[r, c] = 3   # eco
             elif md > 0.35:
                 grid[r, c] = 5   # dike
-            elif mf > 0.20:
+            elif mf > 0.12:
                 grid[r, c] = 1   # farmland
             else:
                 grid[r, c] = 0   # bare
 
-    return grid
+    # Fill isolated "blank" holes so the board does not show unhandled white squares.
+    filled = grid.copy()
+    for r in range(1, tile_rows - 1):
+        for c in range(1, tile_cols - 1):
+            if grid[r, c] != 0:
+                continue
+            hood = grid[r - 1:r + 2, c - 1:c + 2].ravel()
+            hood = hood[hood != 0]
+            if hood.size == 0:
+                continue
+            vals, counts = np.unique(hood, return_counts=True)
+            k = int(vals[np.argmax(counts)])
+            if counts.max() >= 5 and k in (1, 2, 3, 5):
+                filled[r, c] = k
+
+    grid = filled
+
+    return grid, density
 
 
 _KIND_MAP = {0: "bare", 1: "farmland", 2: "water", 3: "eco", 4: "settlement", 5: "dike"}
@@ -99,22 +119,77 @@ class IsometricRenderer:
         self.tile_rows = 48
         self.tile_cols = 72
 
+    def _paint_smooth_water_layer(
+        self,
+        canvas: np.ndarray,
+        water_field: np.ndarray,
+        rows: int,
+        cols: int,
+        hw: int,
+        hh: int,
+        offset_x: int,
+    ) -> None:
+        """Draw water as a smooth, coherent layer; use same grid_to_screen as tiles (r-c for x)."""
+        ny, nx = water_field.shape
+        ch, cw = canvas.shape[:2]
+        water_layer = np.zeros((ch, cw, 4), dtype=np.float64)
+        step = max(1, min(ny, nx) // 100)
+        # Fully vivid blue (legend #4DB8D6 / WATER_LIGHT), avoid dark gray
+        water_rgb = np.array(_hex(Palette.WATER_LIGHT))  # #64B5F6 bright blue
+        water_mid = np.array(_hex(Palette.WATER_MID))    # #2196F3
+        rad = 4
+        for iy in range(0, ny, step):
+            for ix in range(0, nx, step):
+                w = float(water_field[iy, ix])
+                if w < 0.12:
+                    continue
+                r = iy * (rows - 1) / max(1, ny - 1)
+                c = ix * (cols - 1) / max(1, nx - 1)
+                sx = (r - c + rows - 1) * hw + offset_x
+                sy = (r + c) * hh + 10
+                px, py = int(round(sx)), int(round(sy))
+                blend = 0.95 * w
+                for dy in range(-rad, rad + 1):
+                    for dx in range(-rad, rad + 1):
+                        if dx * dx + dy * dy > rad * rad:
+                            continue
+                        qx, qy = px + dx, py + dy
+                        if 0 <= qy < ch and 0 <= qx < cw:
+                            f = 1.0 - 0.2 * (dx * dx + dy * dy) / (rad * rad)
+                            col = water_rgb * (0.7 + 0.3 * w) + water_mid * (0.3 * (1 - w))
+                            col = np.clip(col, 0, 1)
+                            a = blend * f
+                            water_layer[qy, qx, :3] = np.maximum(
+                                water_layer[qy, qx, :3],
+                                col * a,
+                            )
+                            water_layer[qy, qx, 3] = np.clip(water_layer[qy, qx, 3] + a, 0, 1)
+        for i in range(4):
+            water_layer[..., i] = gaussian_filter(water_layer[..., i], sigma=0.8, mode="nearest")
+        alpha = water_layer[..., 3:4]
+        canvas[..., :3] = canvas[..., :3] * (1 - alpha) + water_layer[..., :3] * alpha
+        canvas[..., 3] = np.clip(canvas[..., 3] + water_layer[..., 3], 0, 1)
+
     def _compose_iso_image(
         self,
         tile_grid: np.ndarray,
+        env: Optional[Dict[str, np.ndarray]] = None,
+        density_grid: Optional[np.ndarray] = None,
     ) -> np.ndarray:
-        """Render a full isometric image from the tile classification grid."""
+        """Render a full isometric image with bright white background and vertical urban growth."""
         rows, cols = tile_grid.shape
         hw = self.sprites.half_w
         hh = self.sprites.half_h
         tw, th = self.sprites.tile_screen_size()
 
-        canvas_w = (rows + cols) * hw + tw
-        canvas_h = (rows + cols) * hh + th + 20
+        offset_x = max(0, (cols - rows) * hw)
+        top_pad = 84
+        canvas_w = (rows + cols) * hw + tw + offset_x + 24
+        canvas_h = (rows + cols) * hh + th + top_pad + 24
         canvas = np.ones((canvas_h, canvas_w, 4), dtype=np.float64)
-        canvas[..., :3] = _hex(Palette.BG_LIGHT)
+        canvas[..., :3] = 1.0
+        canvas[..., 3] = 1.0
 
-        # painter's algorithm: draw back-to-front
         for r in range(rows):
             for c in range(cols):
                 kind = _KIND_MAP.get(tile_grid[r, c], "bare")
@@ -123,28 +198,35 @@ class IsometricRenderer:
                 sh, sw = sprite.shape[:2]
 
                 sx, sy = self.sprites.grid_to_screen(r, c)
-                px = sx + (rows - 1) * hw
-                py = sy + 10
+                px = sx + (rows - 1) * hw + offset_x + 12
+                py = sy + top_pad
 
-                # height offset for 3D feel
+                dens = 0.0 if density_grid is None else float(density_grid[r, c])
                 if kind == "water":
                     py += 3
                 elif kind == "settlement":
-                    py -= 2
+                    sprite = self.sprites.get("settlement_base", variant)
+                    sh, sw = sprite.shape[:2]
+                    py -= 5
                 elif kind == "eco":
                     py -= 1
 
-                if px < 0 or py < 0 or px + sw > canvas_w or py + sh > canvas_h:
-                    continue
+                def draw_sprite_at(pyy: int) -> None:
+                    if px < 0 or pyy < 0 or px + sw > canvas_w or pyy + sh > canvas_h:
+                        return
+                    alpha = sprite[..., 3:4]
+                    canvas[pyy:pyy + sh, px:px + sw, :3] = (
+                        canvas[pyy:pyy + sh, px:px + sw, :3] * (1 - alpha)
+                        + sprite[..., :3] * alpha
+                    )
+                    canvas[pyy:pyy + sh, px:px + sw, 3] = np.clip(
+                        canvas[pyy:pyy + sh, px:px + sw, 3] + sprite[..., 3], 0, 1
+                    )
 
-                alpha = sprite[..., 3:4]
-                canvas[py:py + sh, px:px + sw, :3] = (
-                    canvas[py:py + sh, px:px + sw, :3] * (1 - alpha)
-                    + sprite[..., :3] * alpha
-                )
-                canvas[py:py + sh, px:px + sw, 3] = np.clip(
-                    canvas[py:py + sh, px:px + sw, 3] + sprite[..., 3], 0, 1
-                )
+                draw_sprite_at(py)
+                if kind == "settlement":
+                    dens = np.clip(0.16 + dens * 1.26, 0.0, 1.0)
+                    self.sprites.draw_tower(canvas, px + sw / 2, py + sh, dens)
 
         return np.clip(canvas[..., :3], 0, 1)
 
@@ -181,8 +263,8 @@ class IsometricRenderer:
         fig.subplots_adjust(wspace=0.04, hspace=0.12, left=0.01, right=0.99, top=0.90, bottom=0.06)
 
         for ax, idx in zip(axes.flat, idxs):
-            tile_grid = _classify_tiles(env, frames[idx], self.tile_rows, self.tile_cols)
-            img = self._compose_iso_image(tile_grid)
+            tile_grid, density_grid = _classify_tiles(env, frames[idx], self.tile_rows, self.tile_cols)
+            img = self._compose_iso_image(tile_grid, env=env, density_grid=density_grid)
             ax.imshow(img, interpolation="bilinear", aspect="equal")
             ax.set_xticks([]); ax.set_yticks([])
             for sp in ax.spines.values():
@@ -224,12 +306,13 @@ class IsometricRenderer:
         t_vals = sim["t_values"]
         n_frames = len(frames)
 
-        # pre-render all iso frames
+        # Pre-render all iso frames with the same _compose_iso_image as snapshots
+        # (blue water tiles, farmland grid, single tower height). No separate path.
         print("  Pre-rendering isometric frames ...")
         iso_frames = []
         for i in range(n_frames):
-            tg = _classify_tiles(env, frames[i], self.tile_rows, self.tile_cols)
-            iso_frames.append(self._compose_iso_image(tg))
+            tg, dens = _classify_tiles(env, frames[i], self.tile_rows, self.tile_cols)
+            iso_frames.append(self._compose_iso_image(tg, env=env, density_grid=dens))
 
         fig = plt.figure(
             figsize=(self.p.fig_width, self.p.fig_height),

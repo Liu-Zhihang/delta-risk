@@ -168,6 +168,14 @@ class RCCUEngine:
             u = u + p.dt * det + math.sqrt(p.dt) * stoch
             u = np.clip(u, 0.0, 1.0)
 
+            densify = getattr(p, "densify_rate", 0.0)
+            if densify > 0:
+                urban_mask = is_land & (u > p.u_crit)
+                u[urban_mask] = np.clip(
+                    u[urban_mask] + p.dt * densify * u[urban_mask] * (1.0 - u[urban_mask]),
+                    0.0, 1.0,
+                )
+
             u[water_mask] = 0.0
 
             if step % p.save_every == 0 or step == p.n_steps - 1:
