@@ -118,7 +118,7 @@ function computeBoardLayout(width: number, height: number, simView: SimViewData)
 
   return {
     originX: width / 2,
-    originY: 36 + maxTowerH * 0.9,
+    originY: 92 + maxTowerH * 0.9,
     width: boardW,
     height: boardH,
     maxTowerH,
