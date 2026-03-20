@@ -8,6 +8,7 @@ const labRoot = path.resolve(__dirname, "..");
 const sourcePath = path.resolve(labRoot, "..", "sim_data.json");
 const outDir = path.resolve(labRoot, "public", "data");
 const outPath = path.resolve(outDir, "scene-payload.json");
+const simViewPath = path.resolve(outDir, "sim-view.json");
 const assetDir = path.resolve(labRoot, "public", "assets");
 const texturePath = path.resolve(assetDir, "delta-base-texture.svg");
 
@@ -649,6 +650,17 @@ function main() {
   fs.mkdirSync(outDir, { recursive: true });
   fs.mkdirSync(assetDir, { recursive: true });
   fs.writeFileSync(outPath, JSON.stringify(payload), "utf8");
+  fs.writeFileSync(
+    simViewPath,
+    JSON.stringify({
+      grid: source.grid,
+      params: source.params,
+      diagnostics: source.diagnostics,
+      env: source.env,
+      frames: source.frames,
+    }),
+    "utf8",
+  );
   fs.writeFileSync(texturePath, buildBaseTextureSvg(water, farmland, eco), "utf8");
 
   copyAsset(path.resolve(labRoot, "..", "output", "_repo_web_final_v2.png"), path.resolve(assetDir, "preview-hero.png"));

@@ -1,4 +1,4 @@
-import type { FigureTemplate, ScenarioPreset, ScenePayload, StoryManifest } from "../types";
+import type { FigureTemplate, ScenarioPreset, ScenePayload, SimViewData, StoryManifest } from "../types";
 
 async function loadJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
@@ -14,6 +14,10 @@ export async function loadManifest() {
 
 export async function loadScenePayload() {
   return loadJson<ScenePayload>("data/scene-payload.json");
+}
+
+export async function loadSimViewData() {
+  return loadJson<SimViewData>("data/sim-view.json");
 }
 
 export async function loadScenarioPresets() {

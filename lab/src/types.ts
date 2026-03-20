@@ -89,6 +89,34 @@ export interface SceneFrame {
   metrics: Record<string, number>;
 }
 
+export interface SimViewFrame {
+  t: number;
+  tiles: number[][];
+  density: number[][];
+  height: number[][];
+}
+
+export interface SimViewData {
+  grid: {
+    rows: number;
+    cols: number;
+  };
+  params?: Record<string, unknown>;
+  diagnostics: {
+    t_values: number[];
+    mean_u: number[];
+    urban_frac: number[];
+    corridor_ratio: number[];
+    edge_length: number[];
+  };
+  env?: {
+    water?: number[][];
+    farmland?: number[][];
+    eco?: number[][];
+  };
+  frames: SimViewFrame[];
+}
+
 export interface SceneObject {
   id: string;
   name: string;
