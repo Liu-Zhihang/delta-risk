@@ -1,19 +1,56 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { SceneViewport } from "./components/SceneViewport";
-import { loadManifest, loadScenarioPresets, loadScenePayload } from "./lib/loaders";
+import { loadScenarioPresets, loadScenePayload } from "./lib/loaders";
 import { BASELINE_CONTROLS, DEFAULT_LAYERS, getTrackMetrics } from "./lib/scene";
-import type { SandboxControls, ScenarioPreset, ScenePayload, StoryManifest, TrackId } from "./types";
+import type { SandboxControls, ScenarioPreset, ScenePayload, TrackId } from "./types";
 
 type DataBundle = {
-  manifest: StoryManifest;
   scene: ScenePayload;
   presets: ScenarioPreset[];
 };
 
-const TRACK_METRIC_IDS: Record<TrackId, string[]> = {
-  nature: ["linearity", "lowRedundancy", "exposureConcentration", "lockInScore"],
-  cities: ["rccuScore", "nearWaterCoupling", "croplandEmbedding", "emergenceCurve"],
+const SCENE_META: Record<
+  TrackId,
+  {
+    toggle: string;
+    title: string;
+    subtitle: string;
+    metrics: string[];
+  }
+> = {
+  nature: {
+    toggle: "风险锁定",
+    title: "风险锁定场景",
+    subtitle: "聚落沿受限水网持续扩散，并在高风险边缘逐步抬升。",
+    metrics: ["linearity", "lowRedundancy", "exposureConcentration", "lockInScore"],
+  },
+  cities: {
+    toggle: "珠三角原型",
+    title: "珠三角原型场景",
+    subtitle: "河网、农田和聚落共同构成一个庞大的三角洲沙盘。",
+    metrics: ["rccuScore", "nearWaterCoupling", "croplandEmbedding", "emergenceCurve"],
+  },
+};
+
+const PRESET_LABELS: Record<string, string> = {
+  "nature-baseline": "基准形态",
+  "nature-protection-trap": "防护锁定",
+  "nature-ablated-guidance": "削弱引导",
+  "cities-prototype": "原型聚落",
+  "cities-hybrid-water": "混合水网",
+  "cities-diffuse-expansion": "扩散增长",
+};
+
+const METRIC_LABELS: Record<string, string> = {
+  linearity: "线性度",
+  lowRedundancy: "低冗余",
+  exposureConcentration: "暴露集中",
+  lockInScore: "锁定度",
+  rccuScore: "原型强度",
+  nearWaterCoupling: "近水耦合",
+  croplandEmbedding: "农田嵌入",
+  emergenceCurve: "涌现度",
 };
 
 function App() {
@@ -26,12 +63,13 @@ function App() {
   const [activePresetId, setActivePresetId] = useState<string>("");
 
   useEffect(() => {
-    Promise.all([loadManifest(), loadScenePayload(), loadScenarioPresets()])
-      .then(([manifest, scene, presets]) => {
-        setBundle({ manifest, scene, presets });
+    Promise.all([loadScenePayload(), loadScenarioPresets()])
+      .then(([scene, presets]) => {
+        setBundle({ scene, presets });
         const defaultPreset = presets.find((item) => item.track === "cities") ?? presets[0];
         setActivePresetId(defaultPreset.id);
         setControls(defaultPreset.controls);
+        setFrameIndex(Math.floor(scene.frames.length * 0.68));
       })
       .catch((error) => {
         console.error(error);
@@ -44,14 +82,9 @@ function App() {
     }
     const interval = window.setInterval(() => {
       setFrameIndex((current) => (current + 1) % bundle.scene.frames.length);
-    }, 1000 / speed);
+    }, 900 / speed);
     return () => window.clearInterval(interval);
   }, [bundle, playing, speed]);
-
-  const activeTrack = useMemo(
-    () => bundle?.manifest.tracks.find((track) => track.id === trackId) ?? null,
-    [bundle, trackId],
-  );
 
   const activePresets = useMemo(
     () => bundle?.presets.filter((item) => item.track === trackId) ?? [],
@@ -67,40 +100,40 @@ function App() {
     setControls(current.controls);
   }, [activePresets, activePresetId]);
 
-  if (!bundle || !activeTrack) {
+  if (!bundle) {
     return (
       <div className="loading-screen">
-        <p className="eyebrow">Delta Constraint Lab</p>
-        <h1>Loading simulation scene...</h1>
+        <h1>加载沙盘中...</h1>
       </div>
     );
   }
 
   const currentFrame = bundle.scene.frames[frameIndex];
-  const currentMetrics = getTrackMetrics(bundle.scene, trackId, frameIndex).filter((metric) =>
-    TRACK_METRIC_IDS[trackId].includes(metric.id),
-  );
+  const meta = SCENE_META[trackId];
+  const currentMetrics = getTrackMetrics(bundle.scene, trackId, frameIndex)
+    .filter((metric) => meta.metrics.includes(metric.id))
+    .map((metric) => ({
+      ...metric,
+      label: METRIC_LABELS[metric.id] ?? metric.label,
+    }));
 
   return (
     <div className="lab-shell">
       <div className="simulation-card">
         <header className="simulation-card__header">
-          <div>
-            <p className="eyebrow">Delta Constraint Lab</p>
-            <h1>Minimal Simulation View</h1>
-            <p className="simulation-card__subtitle">
-              A simplified 3D sandbox without basemap. The scene focuses on water-guided settlement form and compact indicator feedback.
-            </p>
+          <div className="simulation-card__copy">
+            <h1>{meta.title}</h1>
+            <p className="simulation-card__subtitle">{meta.subtitle}</p>
           </div>
           <div className="track-switch">
-            {bundle.manifest.tracks.map((track) => (
+            {(Object.keys(SCENE_META) as TrackId[]).map((track) => (
               <button
-                key={track.id}
+                key={track}
                 type="button"
-                className={track.id === trackId ? "is-active" : ""}
-                onClick={() => setTrackId(track.id)}
+                className={track === trackId ? "is-active" : ""}
+                onClick={() => setTrackId(track)}
               >
-                {track.id === "cities" ? "Cities" : "Nature"}
+                {SCENE_META[track].toggle}
               </button>
             ))}
           </div>
@@ -110,7 +143,7 @@ function App() {
           <SceneViewport
             scene={bundle.scene}
             track={trackId}
-            chapterId={activeTrack.chapters[0]?.id ?? "scene"}
+            chapterId={trackId}
             viewMode="model"
             frameIndex={frameIndex}
             controls={controls}
@@ -119,7 +152,7 @@ function App() {
 
           <aside className="metrics-window">
             <div className="metrics-window__head">
-              <span>{activeTrack.title}</span>
+              <span>{meta.toggle}</span>
               <strong>{currentFrame.timeLabel}</strong>
             </div>
             <div className="metrics-window__grid">
@@ -143,14 +176,14 @@ function App() {
                   setControls(preset.controls);
                 }}
               >
-                {preset.title}
+                {PRESET_LABELS[preset.id] ?? preset.title}
               </button>
             ))}
           </div>
 
           <div className="timeline-window">
             <button type="button" onClick={() => setPlaying((current) => !current)}>
-              {playing ? "Pause" : "Play"}
+              {playing ? "暂停" : "播放"}
             </button>
             <input
               type="range"

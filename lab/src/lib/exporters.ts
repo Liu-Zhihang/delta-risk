@@ -15,7 +15,7 @@ export async function exportNodeAsPng(node: HTMLElement, template: FigureTemplat
     pixelRatio: Math.max(2, Math.round(template.exportWidth / Math.max(node.clientWidth, 1))),
     backgroundColor: "#f4efe9",
   });
-  saveBlob(dataUrl, `delta-constraint-lab-${track}-${template.id}.png`);
+  saveBlob(dataUrl, `delta-scene-${track}-${template.id}.png`);
 }
 
 export function exportMetricsAsSvg(metrics: MetricCard[], title: string, track: TrackId, template: FigureTemplate) {
@@ -50,13 +50,13 @@ export function exportMetricsAsSvg(metrics: MetricCard[], title: string, track: 
     <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
       <rect width="${width}" height="${height}" fill="#f4efe9" />
       <text x="60" y="76" font-family="Source Serif 4" font-size="44" font-weight="600" fill="#2f2d2b">${title}</text>
-      <text x="60" y="116" font-family="IBM Plex Sans" font-size="22" fill="#6f6256">Metric poster export from Delta Constraint Lab</text>
+      <text x="60" y="116" font-family="IBM Plex Sans" font-size="22" fill="#6f6256">三角洲场景指标导出</text>
       ${cards}
     </svg>
   `;
 
   const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
   const href = URL.createObjectURL(blob);
-  saveBlob(href, `delta-constraint-lab-${track}-${template.id}.svg`);
+  saveBlob(href, `delta-scene-${track}-${template.id}.svg`);
   window.setTimeout(() => URL.revokeObjectURL(href), 1000);
 }

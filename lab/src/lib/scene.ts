@@ -123,10 +123,12 @@ type CellDatum = {
   fillColor: [number, number, number, number];
   strokeColor: [number, number, number, number];
   tile: number;
+  landTile: number;
   risk: number;
   redundancy: number;
   density: number;
   urbanSignal: number;
+  isUrban: boolean;
 };
 
 function lerpColor(
@@ -204,9 +206,9 @@ export function getCameraState(
   return {
     longitude: scene.cameraBookmarks.home.model.longitude,
     latitude: scene.cameraBookmarks.home.model.latitude,
-    zoom: 8.45,
-    pitch: 64,
-    bearing: -34,
+    zoom: 8.58,
+    pitch: 67,
+    bearing: -38,
   };
 }
 
@@ -231,25 +233,22 @@ export function getCellData(
       const urbanSignal = applyScenarioValue(density, controls, waterBoost, true);
       const urbanThreshold = 0.38 - frameProgress * 0.12;
       const isUrban = urbanSignal > urbanThreshold;
-      const tile = scene.layers.water[row][col]
+      const landTile = scene.layers.water[row][col]
         ? 2
         : scene.layers.eco[row][col]
           ? 3
           : scene.layers.farmland[row][col]
             ? 1
-            : isUrban
-              ? 4
-              : 0;
+            : 0;
+      const tile = landTile;
 
       let baseColor = TILE_COLORS.bare;
-      if (tile === 2 && layers.water) {
+      if (landTile === 2 && layers.water) {
         baseColor = TILE_COLORS.water;
-      } else if (tile === 1 && layers.farmland) {
+      } else if (landTile === 1 && layers.farmland) {
         baseColor = TILE_COLORS.farmland;
-      } else if (tile === 3 && layers.eco) {
+      } else if (landTile === 3 && layers.eco) {
         baseColor = TILE_COLORS.eco;
-      } else if (isUrban && layers.built) {
-        baseColor = TILE_COLORS.built;
       } else if (viewMode === "model") {
         baseColor = TILE_COLORS.modelBackplate;
       }
@@ -257,8 +256,8 @@ export function getCellData(
       const riskMix = layers.risk ? Math.max(risk - redundancy * 0.35, 0) : 0;
       const fillColor = riskMix > 0.1 ? lerpColor(baseColor, TILE_COLORS.risk, Math.min(riskMix, 0.28)) : baseColor;
       const growthBoost = layers.growth ? density * (1 + controls.developmentPressure * 0.18) : density;
-      const landPlateHeight = tile === 2 ? 2 : tile === 3 ? 8 : tile === 1 ? 7 : 6;
-      const elevation = isUrban ? 10 + growthBoost * (12 + frameProgress * 10) : landPlateHeight;
+      const landPlateHeight = landTile === 2 ? 2.1 : landTile === 3 ? 8.9 : landTile === 1 ? 8 : 7.1;
+      const elevation = landPlateHeight + (isUrban && landTile !== 2 ? 0.85 + growthBoost * 1.4 : 0);
 
       items.push({
         id: `${row}-${col}`,
@@ -268,10 +267,12 @@ export function getCellData(
         fillColor,
         strokeColor: [255, 255, 255, viewMode === "model" ? 100 : 60],
         tile,
+        landTile,
         risk,
         redundancy,
         density,
         urbanSignal,
+        isUrban,
       });
     }
   }
