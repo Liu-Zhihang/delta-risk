@@ -9,6 +9,35 @@ This repository provides an interactive isometric simulator for **river-constrai
 - **Isometric 3D view**: Water, farmland, ecological reserves, and settlements as tiled terrain
 - **Time slider**: Step through simulation frames and play animation
 - **Diagnostics**: Urban fraction, mean order parameter, corridor ratio
+- **Delta Constraint Lab**: A new editorial React front end with dual Nature / Cities narratives, story mode, sandbox mode, metrics rail, and figure export presets
+
+## Delta Constraint Lab (new app)
+
+The `lab/` directory contains the new front-end shell for the unified website described in the project planning:
+
+- `lab/public/data/story-manifest.json`: editorial narrative structure for Nature and Cities tracks
+- `lab/public/data/scenario-presets.json`: macro sandbox presets
+- `lab/public/data/figure-templates.json`: export preset definitions
+- `lab/public/data/scene-payload.json`: normalized front-end payload generated from `../sim_data.json`
+- `lab/scripts/generate-lab-data.mjs`: adapter that converts the existing simulator JSON into the new payload
+
+### Run the new lab locally
+
+```bash
+cd delta-risk/lab
+npm install
+npm run dev
+```
+
+### Rebuild the lab payload and production bundle
+
+```bash
+cd delta-risk/lab
+npm run generate:data
+npm run build
+```
+
+The build output is written to `lab/dist/`. The repository root `index.html` now redirects to `lab/dist/index.html`, so GitHub Pages on `main` / root can open the new site directly while the legacy prototype remains at `web/index.html`.
 
 ## Quick start (view only)
 

@@ -21,3 +21,9 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Frontend app
+lab/node_modules/
+lab/*.tsbuildinfo
+lab/vite.config.js
+lab/vite.config.d.ts

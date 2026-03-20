@@ -1,0 +1,200 @@
+{
+  "brand": {
+    "title": "Delta Constraint Lab",
+    "eyebrow": "Interactive editorial simulator",
+    "tagline": "A 3D storytelling platform for hazardous substructures and river-network constrained urbanization.",
+    "heroStatement": "Delta growth does not simply spread. It is steered, compressed, and locked into narrow, risky substructures."
+  },
+  "tracks": [
+    {
+      "id": "nature",
+      "label": "Nature Track",
+      "title": "Hazardous Substructures",
+      "subtitle": "From counterintuitive growth to low-redundancy risk lock-in",
+      "cta": "Enter Nature",
+      "heroSummary": "Show how population and built-up growth continue to accumulate in risky delta environments, then reorganize into constrained and low-redundancy substructures under river, levee, and protection effects.",
+      "chapters": [
+        {
+          "id": "phenomenon",
+          "eyebrow": "01",
+          "title": "Phenomenon",
+          "summary": "Growth does not retreat from hazard. It continues to move into risky, constrained spaces.",
+          "whyItMatters": "Editors need the paradox immediately: exposure rises not only because hazards intensify, but because development remains attracted to risky places.",
+          "view": "geo",
+          "focusMetrics": ["linearity", "exposureConcentration"],
+          "evidence": [
+            "Population and built-up intensity rise through the timeline instead of retreating from flood-prone areas.",
+            "Urban growth clusters around the same narrow corridors that also sustain elevated hazard exposure."
+          ]
+        },
+        {
+          "id": "structure",
+          "eyebrow": "02",
+          "title": "Structure",
+          "summary": "Risky growth is not randomly dispersed. It condenses into elongated, river-linked substructures with weak redundancy.",
+          "whyItMatters": "The scientific novelty is spatial organization: the problem is not only where risk exists, but what kind of structure risk-producing growth forms.",
+          "view": "model",
+          "focusMetrics": ["linearity", "lowRedundancy", "endpointEnrichment"],
+          "evidence": [
+            "Linear belts emerge alongside water and levee-like constraints.",
+            "Endpoint-rich growth indicates weak substitute paths and fragile edge conditions."
+          ]
+        },
+        {
+          "id": "mechanism",
+          "eyebrow": "03",
+          "title": "Mechanism",
+          "summary": "River guidance, land constraints, and protection jointly channel development into directional, locked patterns.",
+          "whyItMatters": "This section turns a descriptive map into a mechanism narrative that reviewers can test via ablation and sandbox controls.",
+          "view": "compare",
+          "focusMetrics": ["directionConsistency", "lockInScore"],
+          "evidence": [
+            "Removing river guidance weakens the corridor pattern.",
+            "Increasing protection lowers immediate exposure but can intensify long-term lock-in."
+          ]
+        },
+        {
+          "id": "consequence",
+          "eyebrow": "04",
+          "title": "Consequence",
+          "summary": "Hazard, exposure, and low redundancy overlap, concentrating vulnerability on the most constrained edges.",
+          "whyItMatters": "The project must make clear that these structures matter because they carry disproportionate future fragility, not because they merely look linear.",
+          "view": "geo",
+          "focusMetrics": ["exposureConcentration", "lockInScore"],
+          "evidence": [
+            "High-risk cells co-locate with corridor edges and thin settlement chains.",
+            "Exposure concentration remains elevated even when overall settlement expansion slows."
+          ]
+        },
+        {
+          "id": "scenario-lab",
+          "eyebrow": "05",
+          "title": "Scenario Lab",
+          "summary": "The sandbox exposes how five macro drivers reshape hazard substructures without overwhelming the audience with model internals.",
+          "whyItMatters": "An editor should be able to play with the mechanism and see a defensible response, not just watch a canned animation.",
+          "view": "model",
+          "focusMetrics": ["linearity", "lockInScore"],
+          "evidence": [
+            "Constraint intensity and protection create visible tradeoffs between compactness and lock-in.",
+            "Development pressure amplifies exposure fastest when river guidance is already strong."
+          ]
+        },
+        {
+          "id": "figure-studio",
+          "eyebrow": "06",
+          "title": "Figure Studio",
+          "summary": "Export a consistent set of publication-grade views, evidence boards, and metric posters.",
+          "whyItMatters": "This module turns the site into a figure machine rather than a one-off presentation.",
+          "view": "model",
+          "focusMetrics": ["linearity", "lockInScore"],
+          "evidence": [
+            "Six template presets standardize angle, legend, caption, and export ratio.",
+            "PNG and SVG exports support both web communication and paper drafting."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cities",
+      "label": "Cities Track",
+      "title": "RCCU in Pearl River Delta",
+      "subtitle": "Prototype objects, water guidance, and emergence dynamics",
+      "cta": "Enter Cities",
+      "heroSummary": "Translate the broad hazardous-substructure story into a precise, object-based RCCU narrative in the Pearl River Delta, emphasizing recognizability, interpretation, and editorial clarity.",
+      "chapters": [
+        {
+          "id": "what-is-rccu",
+          "eyebrow": "01",
+          "title": "What Is RCCU",
+          "summary": "RCCU is a distinct corridor-like urban phenomenon coupled to waterways and constrained agrarian landscapes.",
+          "whyItMatters": "Cities needs a tight definition before any technical detail. Readers must see why RCCU is not ordinary fringe growth.",
+          "view": "geo",
+          "focusMetrics": ["rccuScore", "nearWaterCoupling"],
+          "evidence": [
+            "Prototype clusters align with narrow water-linked belts rather than compact urban cores.",
+            "Core and probable classes form a small, visually interpretable subset instead of exhaustive pixel segmentation."
+          ]
+        },
+        {
+          "id": "prd-timeline",
+          "eyebrow": "02",
+          "title": "PRD Timeline",
+          "summary": "A multi-step timeline shows how corridor growth thickens, branches, and consolidates across the Pearl River Delta.",
+          "whyItMatters": "The timeline is the simplest way to communicate emergence and persistence to both editors and broader audiences.",
+          "view": "model",
+          "focusMetrics": ["emergenceCurve", "rccuScore"],
+          "evidence": [
+            "Growth begins as thin aligned chains before thickening into composite strips.",
+            "The most interpretable objects appear near water and reclaimed agricultural structure."
+          ]
+        },
+        {
+          "id": "prototype-objects",
+          "eyebrow": "03",
+          "title": "Prototype Objects",
+          "summary": "Representative objects are scored and classified as core, probable, or non-RCCU for explainable interpretation.",
+          "whyItMatters": "This is where the system supports article figures and review discussion around identifiable examples.",
+          "view": "geo",
+          "focusMetrics": ["rccuScore", "urbanSeparation"],
+          "evidence": [
+            "Objects with strong water coupling and elongated geometry rise to the top of the ranking.",
+            "Urban separation reduces false positives from ordinary compact city expansion."
+          ]
+        },
+        {
+          "id": "water-guidance",
+          "eyebrow": "04",
+          "title": "Water Guidance / Ablation",
+          "summary": "Compare vector water guidance, hybrid guidance, and simplified fields to show why water representation matters.",
+          "whyItMatters": "The method becomes much more credible when users can see the geometry degrade under weaker guidance assumptions.",
+          "view": "compare",
+          "focusMetrics": ["nearWaterCoupling", "croplandEmbedding"],
+          "evidence": [
+            "Ablated water guidance broadens the pattern and weakens clear object prototypes.",
+            "The hybrid setup preserves river-bank alignment while avoiding overly coarse water masks."
+          ]
+        },
+        {
+          "id": "rccu-sandbox",
+          "eyebrow": "05",
+          "title": "RCCU Sandbox",
+          "summary": "A limited control panel allows users to stress-test the emergence of corridor settlements with intuitive macro drivers.",
+          "whyItMatters": "The interaction should feel rigorous but still playful enough for external dissemination.",
+          "view": "model",
+          "focusMetrics": ["rccuScore", "nearWaterCoupling"],
+          "evidence": [
+            "Higher river guidance increases alignment and object confidence.",
+            "Constraint intensity and development pressure jointly shift the balance between plausible and noisy objects."
+          ]
+        },
+        {
+          "id": "figure-studio",
+          "eyebrow": "06",
+          "title": "Figure Studio",
+          "summary": "Export editorial figures, object boards, and timeline strips for the Cities manuscript.",
+          "whyItMatters": "A polished figure workflow increases the manuscript's portability and visual coherence.",
+          "view": "model",
+          "focusMetrics": ["rccuScore", "emergenceCurve"],
+          "evidence": [
+            "Template-driven outputs reduce manual layout work.",
+            "Object-centric boards directly support prototype presentation in paper and talks."
+          ]
+        }
+      ]
+    }
+  ],
+  "footer": [
+    {
+      "title": "Methods & Data",
+      "body": "Derived from RCCU simulation exports, risk overlays, and editorial story manifests. The v1 payload is normalized for front-end integration."
+    },
+    {
+      "title": "Metric Definitions",
+      "body": "Track metrics describe either hazardous substructure dynamics or explainable RCCU object behavior. Each metric is documented in the on-page evidence drawer."
+    },
+    {
+      "title": "About the Model",
+      "body": "The current platform combines existing simulation outputs with a design-oriented adapter layer so front-end structure is stable before richer data ingestion."
+    }
+  ]
+}

@@ -1,0 +1,80 @@
+[
+  {
+    "id": "nature-baseline",
+    "track": "nature",
+    "title": "Baseline Lock-In",
+    "summary": "Balanced river guidance, moderate protection, and sustained development pressure.",
+    "controls": {
+      "riverGuidance": 0.68,
+      "constraintIntensity": 0.62,
+      "protectionAdaptation": 0.58,
+      "developmentPressure": 0.56,
+      "hazardStress": 0.52
+    }
+  },
+  {
+    "id": "nature-protection-trap",
+    "track": "nature",
+    "title": "Protection Trap",
+    "summary": "Protection dampens immediate risk but reinforces long-term spatial lock-in.",
+    "controls": {
+      "riverGuidance": 0.7,
+      "constraintIntensity": 0.7,
+      "protectionAdaptation": 0.84,
+      "developmentPressure": 0.54,
+      "hazardStress": 0.57
+    }
+  },
+  {
+    "id": "nature-ablated-guidance",
+    "track": "nature",
+    "title": "Ablated Guidance",
+    "summary": "Weakened river guidance reduces directional structure and low-redundancy clustering.",
+    "controls": {
+      "riverGuidance": 0.32,
+      "constraintIntensity": 0.42,
+      "protectionAdaptation": 0.47,
+      "developmentPressure": 0.52,
+      "hazardStress": 0.5
+    }
+  },
+  {
+    "id": "cities-prototype",
+    "track": "cities",
+    "title": "Prototype RCCU",
+    "summary": "Strong water coupling and moderate agricultural embedding produce clean prototypes.",
+    "controls": {
+      "riverGuidance": 0.8,
+      "constraintIntensity": 0.63,
+      "protectionAdaptation": 0.44,
+      "developmentPressure": 0.53,
+      "hazardStress": 0.39
+    }
+  },
+  {
+    "id": "cities-hybrid-water",
+    "track": "cities",
+    "title": "Hybrid Water Guidance",
+    "summary": "Hybrid guidance preserves bank alignment while limiting noisy water masks.",
+    "controls": {
+      "riverGuidance": 0.74,
+      "constraintIntensity": 0.58,
+      "protectionAdaptation": 0.41,
+      "developmentPressure": 0.55,
+      "hazardStress": 0.4
+    }
+  },
+  {
+    "id": "cities-diffuse-expansion",
+    "track": "cities",
+    "title": "Diffuse Expansion",
+    "summary": "Lower guidance and higher pressure weaken clean RCCU object identity.",
+    "controls": {
+      "riverGuidance": 0.4,
+      "constraintIntensity": 0.34,
+      "protectionAdaptation": 0.28,
+      "developmentPressure": 0.74,
+      "hazardStress": 0.37
+    }
+  }
+]

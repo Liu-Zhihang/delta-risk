@@ -1,0 +1,62 @@
+[
+  {
+    "id": "hero-oblique",
+    "title": "Hero Oblique",
+    "description": "Editorial opening shot with low-angle oblique camera and minimal legend.",
+    "aspectRatio": "16:9",
+    "view": "model",
+    "legendMode": "minimal",
+    "captionMode": "titleOnly",
+    "exportWidth": 2560
+  },
+  {
+    "id": "timeline-strip",
+    "title": "4-panel Timeline",
+    "description": "Quartered time snapshots for emergence or lock-in progression.",
+    "aspectRatio": "4:3",
+    "view": "model",
+    "legendMode": "inline",
+    "captionMode": "short",
+    "exportWidth": 2400
+  },
+  {
+    "id": "before-after-compare",
+    "title": "Before/After Compare",
+    "description": "Split comparison between baseline and ablated or stressed scenarios.",
+    "aspectRatio": "16:9",
+    "view": "compare",
+    "legendMode": "full",
+    "captionMode": "short",
+    "exportWidth": 2560
+  },
+  {
+    "id": "metric-poster",
+    "title": "Metric Poster",
+    "description": "Clean metric board with publication-style title, subtitle, and sparklines.",
+    "aspectRatio": "3:4",
+    "view": "geo",
+    "legendMode": "hidden",
+    "captionMode": "detailed",
+    "exportWidth": 2200
+  },
+  {
+    "id": "reviewer-board",
+    "title": "Reviewer Evidence Board",
+    "description": "Dense but legible board mixing scene, metrics, and evidence bullets.",
+    "aspectRatio": "16:10",
+    "view": "compare",
+    "legendMode": "full",
+    "captionMode": "detailed",
+    "exportWidth": 2800
+  },
+  {
+    "id": "map-profile-combo",
+    "title": "Map + Profile Combo",
+    "description": "Geo scene with a compact metric profile aligned underneath.",
+    "aspectRatio": "16:10",
+    "view": "geo",
+    "legendMode": "inline",
+    "captionMode": "short",
+    "exportWidth": 2600
+  }
+]
