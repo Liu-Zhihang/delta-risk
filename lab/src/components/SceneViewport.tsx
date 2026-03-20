@@ -15,11 +15,11 @@ import {
 } from "../lib/scene";
 import type { LayerKey, SandboxControls, ScenePayload, TrackId, ViewMode } from "../types";
 
-const GEO_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
+const GEO_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 const BLANK_STYLE: StyleSpecification = {
   version: 8,
   sources: {},
-  layers: [{ id: "background", type: "background", paint: { "background-color": "#f1ece5" } }],
+  layers: [{ id: "background", type: "background", paint: { "background-color": "#020617" } }],
 };
 
 type SceneViewportProps = {
@@ -59,7 +59,7 @@ function buildLayers(
     extruded: true,
     pickable: true,
     wireframe: false,
-    material: { ambient: 0.55, diffuse: 0.65, shininess: 26, specularColor: [255, 242, 228] },
+    material: { ambient: 0.65, diffuse: 0.75, shininess: 32, specularColor: [200, 220, 255] },
   });
 
   const objectLayer = new PolygonLayer({
@@ -68,16 +68,16 @@ function buildLayers(
     getPolygon: (item) => item.polygon,
     getFillColor: (item) =>
       item.class === "core"
-        ? [180, 88, 42, 120]
+        ? [244, 63, 94, 90] // neon pink/red
         : item.class === "probable"
-          ? [196, 144, 64, 98]
-          : [120, 119, 112, 70],
+          ? [245, 158, 11, 80] // amber
+          : [148, 163, 184, 40], // slate
     getLineColor: (item) =>
       item.class === "core"
-        ? [130, 58, 31, 220]
+        ? [254, 226, 226, 255]
         : item.class === "probable"
-          ? [148, 101, 40, 200]
-          : [95, 94, 88, 160],
+          ? [254, 243, 199, 255]
+          : [203, 213, 225, 180],
     lineWidthMinPixels: 1.4,
     extruded: false,
     filled: true,
@@ -90,13 +90,13 @@ function buildLayers(
     data: objects,
     getPosition: (item) => item.centroid,
     getFillColor: (item) =>
-      item.class === "core" ? [137, 61, 37, 255] : item.class === "probable" ? [166, 122, 42, 230] : [99, 98, 93, 220],
+      item.class === "core" ? [225, 29, 72, 255] : item.class === "probable" ? [217, 119, 6, 255] : [100, 116, 139, 220],
     getRadius: (item) => 2200 + item.metrics.rccuScore * 1500,
     radiusMinPixels: 4,
     radiusMaxPixels: 20,
     stroked: true,
-    lineWidthMinPixels: 1,
-    getLineColor: [255, 250, 245, 220],
+    lineWidthMinPixels: 1.5,
+    getLineColor: [255, 255, 255, 255],
   });
 
   const skeletonLayer = new LineLayer({
@@ -105,7 +105,7 @@ function buildLayers(
     getSourcePosition: (item) => item.path[0],
     getTargetPosition: (item) => item.path[1],
     getColor: (item) =>
-      item.class === "core" ? [102, 44, 34, 210] : item.class === "probable" ? [137, 105, 45, 170] : [109, 109, 109, 130],
+      item.class === "core" ? [244, 63, 94, 255] : item.class === "probable" ? [251, 146, 60, 230] : [148, 163, 184, 180],
     getWidth: (item) => (item.class === "core" ? 520 : 300),
   });
 
@@ -113,13 +113,13 @@ function buildLayers(
     id: `annotations-dots-${track}-${chapterId}`,
     data: annotations,
     getPosition: (item) => item.position,
-    getFillColor: [35, 52, 67, 230],
+    getFillColor: [14, 165, 233, 240], // sky blue dot
     getRadius: 2500,
     radiusMinPixels: 4,
     radiusMaxPixels: 10,
     stroked: true,
-    getLineColor: [255, 255, 255, 220],
-    lineWidthMinPixels: 1,
+    getLineColor: [255, 255, 255, 255],
+    lineWidthMinPixels: 1.5,
   });
 
   const annotationTextLayer = new TextLayer({
@@ -127,7 +127,7 @@ function buildLayers(
     data: annotations,
     getPosition: (item) => item.position,
     getText: (item) => item.title,
-    getColor: [32, 40, 48, 255],
+    getColor: [248, 250, 252, 255], // text color light
     getSize: 15,
     sizeUnits: "pixels",
     getTextAnchor: "start",
@@ -135,8 +135,8 @@ function buildLayers(
     getPixelOffset: [12, 0],
     fontFamily: "IBM Plex Sans, sans-serif",
     background: true,
-    getBackgroundColor: [255, 251, 246, 230],
-    getBorderColor: [219, 210, 201, 255],
+    getBackgroundColor: [15, 23, 42, 230], // dark bg
+    getBorderColor: [51, 65, 85, 255], // Line color
     getBorderWidth: 1,
   });
 

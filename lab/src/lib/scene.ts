@@ -106,13 +106,13 @@ const METRIC_META: Record<
 };
 
 const TILE_COLORS = {
-  bare: [233, 226, 218, 238] as [number, number, number, number],
-  farmland: [155, 184, 122, 232] as [number, number, number, number],
-  water: [94, 145, 182, 232] as [number, number, number, number],
-  eco: [74, 114, 78, 236] as [number, number, number, number],
-  built: [200, 120, 80, 236] as [number, number, number, number],
-  risk: [195, 86, 52, 140] as [number, number, number, number],
-  modelBackplate: [247, 241, 235, 255] as [number, number, number, number],
+  bare: [15, 23, 42, 220] as [number, number, number, number],
+  farmland: [20, 83, 45, 180] as [number, number, number, number],
+  water: [8, 145, 178, 160] as [number, number, number, number],
+  eco: [6, 78, 59, 180] as [number, number, number, number],
+  built: [148, 163, 184, 255] as [number, number, number, number],
+  risk: [153, 27, 27, 180] as [number, number, number, number],
+  modelBackplate: [2, 6, 23, 255] as [number, number, number, number],
 };
 
 type CellDatum = {
@@ -253,7 +253,8 @@ export function getCellData(
       const fillColor = riskMix > 0.08 ? lerpColor(baseColor, TILE_COLORS.risk, Math.min(riskMix, 0.72)) : baseColor;
       const scaledHeight = urbanSignal;
       const growthBoost = layers.growth ? density * (1 + controls.developmentPressure * 0.55) : density;
-      const elevation = (viewMode === "model" ? 180 : 110) + (isUrban ? scaledHeight * 1800 : growthBoost * 260);
+      // Drastically reduced elevation multiplier to create a smooth 3D terrain instead of massive pillars
+      const elevation = (viewMode === "model" ? 100 : 20) + (isUrban ? scaledHeight * 280 : growthBoost * 80);
 
       items.push({
         id: `${row}-${col}`,
