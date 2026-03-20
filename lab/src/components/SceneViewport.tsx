@@ -63,6 +63,13 @@ type ViewState = {
   rotation: number;
 };
 
+const DEFAULT_VIEW: ViewState = {
+  scale: 1.22,
+  offsetX: 0,
+  offsetY: 0,
+  rotation: 0.82,
+};
+
 const DAY_SCENE: ScenePalette = {
   bg: "#f7f3ec",
   shadow: "rgba(188, 168, 142, 0.16)",
@@ -106,11 +113,11 @@ function hash01(a: number, b: number, c = 0) {
 function computeBoardLayout(width: number, height: number, simView: SimViewData): BoardLayout {
   const rows = simView.grid.rows;
   const cols = simView.grid.cols;
-  const availW = width * 0.94;
-  const availH = height * 0.8;
+  const availW = width * 0.98;
+  const availH = height * 0.88;
   const tileWByWidth = availW / ((rows + cols) * 0.54);
   const tileWByHeight = availH / (((rows + cols) * 0.25) + 9.5);
-  const tileW = clamp(Math.min(tileWByWidth, tileWByHeight), 9, 26);
+  const tileW = clamp(Math.min(tileWByWidth, tileWByHeight), 10.5, 30);
   const tileH = tileW * 0.48;
   const boardW = (rows + cols) * tileW * 0.5;
   const boardH = (rows + cols) * tileH * 0.5;
@@ -118,7 +125,7 @@ function computeBoardLayout(width: number, height: number, simView: SimViewData)
 
   return {
     originX: width / 2,
-    originY: 92 + maxTowerH * 0.9,
+    originY: 138 + maxTowerH * 0.92,
     width: boardW,
     height: boardH,
     maxTowerH,
@@ -492,7 +499,7 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const boardRef = useRef<BoardLayout | null>(null);
-  const viewRef = useRef<ViewState>({ scale: 1, offsetX: 0, offsetY: 0, rotation: 0.16 });
+  const viewRef = useRef<ViewState>({ ...DEFAULT_VIEW });
   const dragRef = useRef<{ mode: "pan" | "rotate"; lastX: number; lastY: number } | null>(null);
   const dprRef = useRef(1);
 
@@ -680,7 +687,7 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
     };
 
     const onDoubleClick = () => {
-      viewRef.current = { scale: 1, offsetX: 0, offsetY: 0, rotation: 0.16 };
+      viewRef.current = { ...DEFAULT_VIEW };
       renderFrame();
     };
 
@@ -719,7 +726,7 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
   };
 
   const resetView = () => {
-    viewRef.current = { scale: 1, offsetX: 0, offsetY: 0, rotation: 0.16 };
+    viewRef.current = { ...DEFAULT_VIEW };
     renderFrame();
   };
 
