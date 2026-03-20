@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { SceneViewport } from "./components/SceneViewport";
 import { loadScenePayload, loadSimViewData } from "./lib/loaders";
@@ -40,6 +40,13 @@ const METRIC_LABELS: Record<string, string> = {
   croplandEmbedding: "Cropland embedding",
   emergenceCurve: "Emergence strength",
 };
+
+const LEGEND_ITEMS = [
+  { label: "Waterways", className: "is-water" },
+  { label: "Cropland", className: "is-cropland" },
+  { label: "Ecology", className: "is-ecology" },
+  { label: "Settlements", className: "is-settlement" },
+] as const;
 
 function App() {
   const [bundle, setBundle] = useState<DataBundle | null>(null);
@@ -132,6 +139,15 @@ function App() {
                 </div>
               ))}
             </div>
+          </aside>
+
+          <aside className="legend-window" aria-label="Map legend">
+            {LEGEND_ITEMS.map((item) => (
+              <div key={item.label} className="legend-item">
+                <span className={`legend-swatch ${item.className}`} aria-hidden="true" />
+                <span>{item.label}</span>
+              </div>
+            ))}
           </aside>
 
           <div className="timeline-window">

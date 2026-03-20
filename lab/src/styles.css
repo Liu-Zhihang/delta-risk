@@ -140,7 +140,8 @@ button {
     radial-gradient(circle at 18% 18%, rgba(205, 223, 179, 0.46), transparent 28%),
     radial-gradient(circle at 80% 14%, rgba(186, 220, 232, 0.34), transparent 24%),
     linear-gradient(180deg, #edf3e2 0%, #e4edd8 100%);
-  min-height: 900px;
+  height: clamp(690px, calc(100vh - 190px), 860px);
+  min-height: 690px;
 }
 
 .scene-shell::after {
@@ -152,7 +153,8 @@ button {
 }
 
 .scene-pane {
-  height: 900px;
+  position: relative;
+  height: 100%;
 }
 
 .scene-pane canvas {
@@ -163,7 +165,8 @@ button {
 }
 
 .metrics-window,
-.timeline-window {
+.timeline-window,
+.legend-window {
   position: absolute;
   z-index: 5;
   border: 1px solid rgba(255, 255, 255, 0.82);
@@ -223,7 +226,7 @@ button {
 
 .timeline-window {
   left: 50%;
-  bottom: 18px;
+  bottom: 34px;
   transform: translateX(-50%);
   width: min(760px, calc(100% - 44px));
   border-radius: 999px;
@@ -232,6 +235,78 @@ button {
   align-items: center;
   gap: 14px;
   padding: 10px 12px;
+}
+
+.legend-window {
+  right: 18px;
+  bottom: 118px;
+  width: 218px;
+  border-radius: 22px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  font-size: 0.92rem;
+}
+
+.legend-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.legend-swatch.is-water {
+  background: linear-gradient(180deg, #87d1f8 0%, #4aaee6 100%);
+}
+
+.legend-swatch.is-cropland {
+  background: linear-gradient(180deg, #b2e08a 0%, #79c765 100%);
+}
+
+.legend-swatch.is-ecology {
+  background: linear-gradient(180deg, #6ab868 0%, #387940 100%);
+}
+
+.legend-swatch.is-settlement {
+  background: linear-gradient(180deg, #ff9b74 0%, #d97f5f 100%);
+}
+
+.scene-controls {
+  position: absolute;
+  left: 18px;
+  bottom: 34px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  background: rgba(250, 247, 240, 0.9);
+  box-shadow: 0 20px 50px rgba(82, 74, 63, 0.14);
+  backdrop-filter: blur(10px);
+}
+
+.scene-controls button {
+  min-width: 40px;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.84);
+  color: var(--ink);
+}
+
+.scene-controls__reset {
+  padding: 0 14px;
+  min-width: auto;
 }
 
 .timeline-window input[type="range"] {
@@ -270,7 +345,8 @@ button {
     height: 720px;
   }
 
-  .metrics-window {
+  .metrics-window,
+  .legend-window {
     position: static;
     width: auto;
     margin: 18px 18px 0;
@@ -279,6 +355,7 @@ button {
   .timeline-window {
     left: 18px;
     right: 18px;
+    bottom: 18px;
     transform: none;
     width: auto;
     grid-template-columns: auto 1fr;
@@ -290,5 +367,10 @@ button {
   .timeline-window span,
   .timeline-window select {
     grid-column: span 1;
+  }
+
+  .scene-controls {
+    left: 18px;
+    bottom: 112px;
   }
 }

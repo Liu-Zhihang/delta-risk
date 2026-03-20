@@ -52,12 +52,15 @@ type BoardLayout = {
   maxTowerH: number;
   tileW: number;
   tileH: number;
+  centerRow: number;
+  centerCol: number;
 };
 
 type ViewState = {
   scale: number;
   offsetX: number;
   offsetY: number;
+  rotation: number;
 };
 
 const DAY_SCENE: ScenePalette = {
@@ -121,13 +124,21 @@ function computeBoardLayout(width: number, height: number, simView: SimViewData)
     maxTowerH,
     tileW,
     tileH,
+    centerRow: (rows - 1) / 2,
+    centerCol: (cols - 1) / 2,
   };
 }
 
-function isoPoint(r: number, c: number, board: BoardLayout) {
+function isoPoint(r: number, c: number, board: BoardLayout, rotation = 0) {
+  const gx = c - board.centerCol;
+  const gy = r - board.centerRow;
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  const rx = gx * cos - gy * sin;
+  const ry = gx * sin + gy * cos;
   return {
-    x: board.originX + (c - r) * board.tileW * 0.5,
-    y: board.originY + (c + r) * board.tileH * 0.5,
+    x: board.originX + (rx - ry) * board.tileW * 0.5,
+    y: board.originY + (rx + ry) * board.tileH * 0.5,
   };
 }
 
@@ -307,7 +318,7 @@ function drawSettlement(
   board: BoardLayout,
   scene: ScenePalette,
 ) {
-  const podiumLift = board.tileH * 0.34;
+  const podiumLift = board.tileH * 0.2;
   drawPrism(
     ctx,
     x,
@@ -345,7 +356,7 @@ function drawSettlement(
     y - podiumLift * 0.46,
     board.tileW * 0.54,
     board.tileH * 0.24,
-    board.tileH * (0.35 + h * 0.58),
+    board.tileH * (0.28 + h * 0.32),
     scene.urbanMainTop,
     scene.urbanMainLeft,
     scene.urbanMainRight,
@@ -353,34 +364,31 @@ function drawSettlement(
   );
 
   const towers: Array<{ dx: number; dy: number; w: number; d: number; h: number }> = [];
-  if (h > 0.06) {
-    towers.push({ dx: 0, dy: 0, w: board.tileW * 0.56, d: board.tileH * 0.46, h: board.tileH * (1.8 + h * 9.4) });
+  if (h > 0.08) {
+    towers.push({
+      dx: 0,
+      dy: 0,
+      w: board.tileW * 0.52,
+      d: board.tileH * 0.4,
+      h: board.tileH * (0.72 + h * 1.9),
+    });
   }
-  if (h > 0.18 || compact > 0.42) {
+  if (h > 0.24 || compact > 0.48) {
     towers.push({
       dx: -board.tileW * 0.2,
       dy: board.tileH * 0.05,
-      w: board.tileW * 0.34,
-      d: board.tileH * 0.3,
-      h: board.tileH * (1.1 + h * 4.8),
+      w: board.tileW * 0.3,
+      d: board.tileH * 0.24,
+      h: board.tileH * (0.48 + h * 1.1),
     });
   }
-  if (h > 0.38) {
+  if (h > 0.5) {
     towers.push({
       dx: board.tileW * 0.22,
       dy: -board.tileH * 0.03,
-      w: board.tileW * 0.32,
-      d: board.tileH * 0.28,
-      h: board.tileH * (1 + h * 4.2),
-    });
-  }
-  if (h > 0.72) {
-    towers.push({
-      dx: board.tileW * 0.02,
-      dy: -board.tileH * 0.2,
-      w: board.tileW * 0.22,
+      w: board.tileW * 0.26,
       d: board.tileH * 0.22,
-      h: board.tileH * (0.9 + h * 2.5),
+      h: board.tileH * (0.44 + h * 0.82),
     });
   }
 
@@ -393,7 +401,7 @@ function drawSettlement(
     const right = index === 0 ? scene.urbanTowerRight : scene.urbanTowerRightAlt;
     drawPrism(ctx, bx, by, tower.w, tower.d, tower.h, top, left, right, null);
 
-    const windows = Math.max(2, Math.floor(tower.h / (board.tileH * 0.62)));
+    const windows = Math.max(1, Math.floor(tower.h / (board.tileH * 0.7)));
     ctx.save();
     ctx.fillStyle = scene.urbanGlass;
     for (let row = 0; row < windows; row += 1) {
@@ -410,6 +418,7 @@ function drawWaterNetwork(
   frame: SimViewData["frames"][number],
   board: BoardLayout,
   scene: ScenePalette,
+  rotation: number,
 ) {
   const rows = frame.tiles.length;
   const cols = frame.tiles[0].length;
@@ -448,16 +457,16 @@ function drawWaterNetwork(
       if (!hasWater(row, col)) {
         continue;
       }
-      const center = isoPoint(row, col, board);
+      const center = isoPoint(row, col, board, rotation);
       const density = frame.density?.[row]?.[col] ?? 0;
-      const waterWidth = board.tileH * (0.54 + density * 0.18);
+      const waterWidth = board.tileH * (0.32 + density * 0.1);
 
       if (hasWater(row + 1, col)) {
-        const next = isoPoint(row + 1, col, board);
+        const next = isoPoint(row + 1, col, board, rotation);
         drawSegment(center.x, center.y + board.tileH * 0.02, next.x, next.y + board.tileH * 0.02, waterWidth);
       }
       if (hasWater(row, col + 1)) {
-        const next = isoPoint(row, col + 1, board);
+        const next = isoPoint(row, col + 1, board, rotation);
         drawSegment(center.x, center.y + board.tileH * 0.02, next.x, next.y + board.tileH * 0.02, waterWidth);
       }
 
@@ -470,8 +479,8 @@ function drawWaterNetwork(
         ctx,
         center.x,
         center.y + board.tileH * 0.06,
-        board.tileW * (branches >= 3 ? 0.74 : 0.56),
-        board.tileH * (branches >= 3 ? 0.56 : 0.38),
+        board.tileW * (branches >= 3 ? 0.46 : 0.34),
+        board.tileH * (branches >= 3 ? 0.34 : 0.22),
         scene.water,
         null,
       );
@@ -483,7 +492,8 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const boardRef = useRef<BoardLayout | null>(null);
-  const viewRef = useRef<ViewState>({ scale: 1, offsetX: 0, offsetY: 0 });
+  const viewRef = useRef<ViewState>({ scale: 1, offsetX: 0, offsetY: 0, rotation: 0.16 });
+  const dragRef = useRef<{ mode: "pan" | "rotate"; lastX: number; lastY: number } | null>(null);
   const dprRef = useRef(1);
 
   const frame = useMemo(() => simView.frames[frameIndex], [simView, frameIndex]);
@@ -531,40 +541,57 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
       const cols = simView.grid.cols;
       const farmlandEnv = simView.env?.farmland ?? [];
       const ecoEnv = simView.env?.eco ?? [];
+      const cells: Array<{
+        row: number;
+        col: number;
+        kind: number;
+        density: number;
+        heightValue: number;
+        farmNearby: number;
+        ecoNearby: number;
+        x: number;
+        y: number;
+      }> = [];
 
       for (let row = 0; row < rows; row += 1) {
         for (let col = 0; col < cols; col += 1) {
           const kind = frame.tiles[row][col];
           const density = frame.density?.[row]?.[col] ?? 0;
           const heightValue = frame.height?.[row]?.[col] ?? density;
-          const { x, y } = isoPoint(row, col, board);
-
-          if (kind === 4) {
-            drawSettlement(ctx, x, y, density, heightValue, row, col, board, scene);
-            continue;
-          }
-
-          if (kind === 2) {
-            const farmNearby = farmlandEnv[row]?.[col] ?? 0;
-            if (farmNearby) {
-              drawFarmland(ctx, x, y, row, col, board, scene);
-            } else {
-              drawBare(ctx, x, y, board, scene);
-            }
-            continue;
-          }
-
-          if (kind === 1) {
-            drawFarmland(ctx, x, y, row, col, board, scene);
-          } else if (kind === 3 || ecoEnv[row]?.[col]) {
-            drawEco(ctx, x, y, row, col, board, scene);
-          } else {
-            drawBare(ctx, x, y, board, scene);
-          }
+          const farmNearby = farmlandEnv[row]?.[col] ?? 0;
+          const ecoNearby = ecoEnv[row]?.[col] ?? 0;
+          const { x, y } = isoPoint(row, col, board, view.rotation);
+          cells.push({ row, col, kind, density, heightValue, farmNearby, ecoNearby, x, y });
         }
       }
 
-      drawWaterNetwork(ctx, frame, board, scene);
+      cells
+        .sort((a, b) => (a.y === b.y ? a.x - b.x : a.y - b.y))
+        .forEach((cell) => {
+          if (cell.kind === 4) {
+            drawSettlement(ctx, cell.x, cell.y, cell.density, cell.heightValue, cell.row, cell.col, board, scene);
+            return;
+          }
+
+          if (cell.kind === 2) {
+            if (cell.farmNearby) {
+              drawFarmland(ctx, cell.x, cell.y, cell.row, cell.col, board, scene);
+            } else {
+              drawBare(ctx, cell.x, cell.y, board, scene);
+            }
+            return;
+          }
+
+          if (cell.kind === 1) {
+            drawFarmland(ctx, cell.x, cell.y, cell.row, cell.col, board, scene);
+          } else if (cell.kind === 3 || cell.ecoNearby) {
+            drawEco(ctx, cell.x, cell.y, cell.row, cell.col, board, scene);
+          } else {
+            drawBare(ctx, cell.x, cell.y, board, scene);
+          }
+        });
+
+      drawWaterNetwork(ctx, frame, board, scene, view.rotation);
       ctx.restore();
     },
     [frame, simView],
@@ -616,31 +643,36 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
     }
 
     const onPointerDown = (event: PointerEvent) => {
+      event.preventDefault();
       canvas.setPointerCapture(event.pointerId);
-      const view = viewRef.current;
-      view.offsetX = view.offsetX;
-      view.offsetY = view.offsetY;
-      (canvas as HTMLCanvasElement).dataset.dragging = "true";
-      (canvas as HTMLCanvasElement).dataset.lastX = String(event.clientX);
-      (canvas as HTMLCanvasElement).dataset.lastY = String(event.clientY);
-      canvas.style.cursor = "grabbing";
+      dragRef.current = {
+        mode: event.button === 2 || event.shiftKey ? "rotate" : "pan",
+        lastX: event.clientX,
+        lastY: event.clientY,
+      };
+      canvas.style.cursor = dragRef.current.mode === "rotate" ? "ew-resize" : "grabbing";
     };
 
     const onPointerMove = (event: PointerEvent) => {
-      if (canvas.dataset.dragging !== "true") {
+      if (!dragRef.current) {
         return;
       }
-      const lastX = Number(canvas.dataset.lastX ?? event.clientX);
-      const lastY = Number(canvas.dataset.lastY ?? event.clientY);
-      viewRef.current.offsetX += event.clientX - lastX;
-      viewRef.current.offsetY += event.clientY - lastY;
-      canvas.dataset.lastX = String(event.clientX);
-      canvas.dataset.lastY = String(event.clientY);
+      const { lastX, lastY, mode } = dragRef.current;
+      const dx = event.clientX - lastX;
+      const dy = event.clientY - lastY;
+      if (mode === "rotate") {
+        viewRef.current.rotation += dx * 0.008;
+      } else {
+        viewRef.current.offsetX += dx;
+        viewRef.current.offsetY += dy;
+      }
+      dragRef.current.lastX = event.clientX;
+      dragRef.current.lastY = event.clientY;
       renderFrame();
     };
 
     const stopDragging = () => {
-      canvas.dataset.dragging = "false";
+      dragRef.current = null;
       canvas.style.cursor = "grab";
     };
 
@@ -660,8 +692,12 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
     };
 
     const onDoubleClick = () => {
-      viewRef.current = { scale: 1, offsetX: 0, offsetY: 0 };
+      viewRef.current = { scale: 1, offsetX: 0, offsetY: 0, rotation: 0.16 };
       renderFrame();
+    };
+
+    const onContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
     };
 
     canvas.addEventListener("pointerdown", onPointerDown);
@@ -670,6 +706,7 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
     canvas.addEventListener("pointerleave", stopDragging);
     canvas.addEventListener("wheel", onWheel, { passive: false });
     canvas.addEventListener("dblclick", onDoubleClick);
+    canvas.addEventListener("contextmenu", onContextMenu);
     canvas.style.cursor = "grab";
 
     return () => {
@@ -679,12 +716,45 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
       canvas.removeEventListener("pointerleave", stopDragging);
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("dblclick", onDoubleClick);
+      canvas.removeEventListener("contextmenu", onContextMenu);
     };
   }, [renderFrame]);
+
+  const adjustZoom = (factor: number) => {
+    viewRef.current.scale = clamp(viewRef.current.scale * factor, 0.74, 2.6);
+    renderFrame();
+  };
+
+  const adjustRotation = (delta: number) => {
+    viewRef.current.rotation += delta;
+    renderFrame();
+  };
+
+  const resetView = () => {
+    viewRef.current = { scale: 1, offsetX: 0, offsetY: 0, rotation: 0.16 };
+    renderFrame();
+  };
 
   return (
     <div ref={containerRef} className="scene-pane scene-pane--canvas">
       <canvas ref={canvasRef} />
+      <div className="scene-controls" aria-label="View controls">
+        <button type="button" onClick={() => adjustZoom(1.12)} aria-label="Zoom in">
+          +
+        </button>
+        <button type="button" onClick={() => adjustZoom(0.9)} aria-label="Zoom out">
+          −
+        </button>
+        <button type="button" onClick={() => adjustRotation(-0.18)} aria-label="Rotate left">
+          ⟲
+        </button>
+        <button type="button" onClick={() => adjustRotation(0.18)} aria-label="Rotate right">
+          ⟳
+        </button>
+        <button type="button" className="scene-controls__reset" onClick={resetView}>
+          Reset
+        </button>
+      </div>
     </div>
   );
 }
