@@ -22,10 +22,10 @@ export const DEFAULT_LAYERS: Record<LayerKey, boolean> = {
   farmland: true,
   eco: true,
   built: true,
-  objects: true,
-  risk: true,
+  objects: false,
+  risk: false,
   growth: true,
-  skeleton: true,
+  skeleton: false,
 };
 
 const METRIC_META: Record<
@@ -106,13 +106,13 @@ const METRIC_META: Record<
 };
 
 const TILE_COLORS = {
-  bare: [15, 23, 42, 220] as [number, number, number, number],
-  farmland: [20, 83, 45, 180] as [number, number, number, number],
-  water: [8, 145, 178, 160] as [number, number, number, number],
-  eco: [6, 78, 59, 180] as [number, number, number, number],
-  built: [148, 163, 184, 255] as [number, number, number, number],
-  risk: [153, 27, 27, 180] as [number, number, number, number],
-  modelBackplate: [2, 6, 23, 255] as [number, number, number, number],
+  bare: [173, 198, 126, 255] as [number, number, number, number],
+  farmland: [148, 187, 108, 255] as [number, number, number, number],
+  water: [128, 191, 212, 255] as [number, number, number, number],
+  eco: [118, 165, 88, 255] as [number, number, number, number],
+  built: [206, 62, 39, 255] as [number, number, number, number],
+  risk: [186, 78, 58, 180] as [number, number, number, number],
+  modelBackplate: [181, 206, 136, 255] as [number, number, number, number],
 };
 
 type CellDatum = {
@@ -126,6 +126,7 @@ type CellDatum = {
   risk: number;
   redundancy: number;
   density: number;
+  urbanSignal: number;
 };
 
 function lerpColor(
@@ -200,11 +201,13 @@ export function getCameraState(
   chapterId: string,
   viewMode: ViewMode,
 ): CameraState {
-  if (viewMode === "compare") {
-    return scene.cameraBookmarks.home.geo;
-  }
-  const key = chapterId.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
-  return scene.cameraBookmarks[track]?.[key] ?? scene.cameraBookmarks.home[viewMode];
+  return {
+    longitude: scene.cameraBookmarks.home.model.longitude,
+    latitude: scene.cameraBookmarks.home.model.latitude,
+    zoom: 8.45,
+    pitch: 64,
+    bearing: -34,
+  };
 }
 
 export function getCellData(
@@ -215,6 +218,7 @@ export function getCellData(
   viewMode: ViewMode,
 ): CellDatum[] {
   const frame = scene.frames[frameIndex];
+  const frameProgress = scene.frames.length > 1 ? frameIndex / (scene.frames.length - 1) : 0;
   const items: CellDatum[] = [];
   for (let row = 0; row < scene.grid.rows; row += 1) {
     for (let col = 0; col < scene.grid.cols; col += 1) {
@@ -225,7 +229,8 @@ export function getCellData(
       const polygon = cellPolygon(scene, row, col);
       const centroid = cellCentroid(polygon);
       const urbanSignal = applyScenarioValue(density, controls, waterBoost, true);
-      const isUrban = urbanSignal > 0.34;
+      const urbanThreshold = 0.38 - frameProgress * 0.12;
+      const isUrban = urbanSignal > urbanThreshold;
       const tile = scene.layers.water[row][col]
         ? 2
         : scene.layers.eco[row][col]
@@ -250,11 +255,10 @@ export function getCellData(
       }
 
       const riskMix = layers.risk ? Math.max(risk - redundancy * 0.35, 0) : 0;
-      const fillColor = riskMix > 0.08 ? lerpColor(baseColor, TILE_COLORS.risk, Math.min(riskMix, 0.72)) : baseColor;
-      const scaledHeight = urbanSignal;
-      const growthBoost = layers.growth ? density * (1 + controls.developmentPressure * 0.55) : density;
-      // Drastically reduced elevation multiplier to create a smooth 3D terrain instead of massive pillars
-      const elevation = (viewMode === "model" ? 100 : 20) + (isUrban ? scaledHeight * 280 : growthBoost * 80);
+      const fillColor = riskMix > 0.1 ? lerpColor(baseColor, TILE_COLORS.risk, Math.min(riskMix, 0.28)) : baseColor;
+      const growthBoost = layers.growth ? density * (1 + controls.developmentPressure * 0.18) : density;
+      const landPlateHeight = tile === 2 ? 2 : tile === 3 ? 8 : tile === 1 ? 7 : 6;
+      const elevation = isUrban ? 10 + growthBoost * (12 + frameProgress * 10) : landPlateHeight;
 
       items.push({
         id: `${row}-${col}`,
@@ -267,6 +271,7 @@ export function getCellData(
         risk,
         redundancy,
         density,
+        urbanSignal,
       });
     }
   }
