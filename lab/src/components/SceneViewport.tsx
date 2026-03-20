@@ -1,4 +1,4 @@
-import { PolygonLayer } from "@deck.gl/layers";
+import { BitmapLayer, PolygonLayer } from "@deck.gl/layers";
 import { DeckGL } from "@deck.gl/react";
 import type { StyleSpecification } from "maplibre-gl";
 import maplibregl from "maplibre-gl";
@@ -91,29 +91,6 @@ function adjustColor(
   ];
 }
 
-function createSubPolygon(
-  polygon: [number, number][],
-  row: number,
-  col: number,
-  divisions: number,
-  gapRatio: number,
-) {
-  const { west, east, north, south } = polygonBounds(polygon);
-  const width = east - west;
-  const height = north - south;
-  const subWidth = width / divisions;
-  const subHeight = height / divisions;
-  const gapX = subWidth * gapRatio;
-  const gapY = subHeight * gapRatio;
-
-  const subWest = west + subWidth * col + gapX;
-  const subEast = west + subWidth * (col + 1) - gapX;
-  const subNorth = north - subHeight * row - gapY;
-  const subSouth = north - subHeight * (row + 1) + gapY;
-
-  return createRectPolygon(subWest, subEast, subNorth, subSouth);
-}
-
 function createFootprint(
   polygon: [number, number][],
   xStart: number,
@@ -134,50 +111,6 @@ function createFootprint(
     north - height * yStart - insetY,
     north - height * yEnd + insetY,
   );
-}
-
-function createGroundTiles(cellData: CellDatum[]) {
-  const groundTiles: PolygonDatum[] = [];
-
-  for (const item of cellData) {
-    const divisions = item.landTile === 1 ? 3 : 2;
-    const gapRatio = item.landTile === 2 ? 0.025 : 0.055;
-
-    for (let row = 0; row < divisions; row += 1) {
-      for (let col = 0; col < divisions; col += 1) {
-        const seed = seededUnit(`${item.id}-${row}-${col}`);
-        const tint =
-          item.landTile === 2
-            ? 6 + seed * 14
-            : item.landTile === 1
-              ? -12 + seed * 24
-              : item.landTile === 3
-                ? -10 + seed * 16
-                : -8 + seed * 18;
-        const fillColor = adjustColor(item.fillColor, tint);
-        const elevation =
-          item.landTile === 2
-            ? item.elevation + seed * 0.4
-            : item.elevation + 0.25 + seed * (item.landTile === 1 ? 1.2 : 0.8);
-        const lineColor =
-          item.landTile === 2
-            ? ([88, 150, 176, 170] as [number, number, number, number])
-            : item.landTile === 3
-              ? ([90, 126, 66, 135] as [number, number, number, number])
-              : ([111, 137, 78, 130] as [number, number, number, number]);
-
-        groundTiles.push({
-          id: `${item.id}-ground-${row}-${col}`,
-          polygon: createSubPolygon(item.polygon, row, col, divisions, gapRatio),
-          fillColor,
-          lineColor,
-          elevation,
-        });
-      }
-    }
-  }
-
-  return groundTiles;
 }
 
 function createSettlementBlocks(cellData: CellDatum[], frameProgress: number) {
@@ -256,7 +189,6 @@ export function SceneViewport({
   const frameProgress = scene.frames.length > 1 ? frameIndex / (scene.frames.length - 1) : 0;
 
   const sceneBoard = useMemo(() => [{ polygon: expandScenePolygon(scene) }], [scene]);
-  const groundTiles = useMemo(() => createGroundTiles(cellData), [cellData]);
   const settlementBlocks = useMemo(
     () => createSettlementBlocks(cellData, frameProgress),
     [cellData, frameProgress],
@@ -268,25 +200,18 @@ export function SceneViewport({
         id: "board-base",
         data: sceneBoard,
         getPolygon: (item: { polygon: [number, number][] }) => item.polygon,
-        getFillColor: [148, 165, 100, 255],
-        getLineColor: [100, 116, 67, 220],
-        lineWidthMinPixels: 1.6,
-        extruded: true,
+        getFillColor: [177, 197, 128, 255],
+        getLineColor: [99, 118, 66, 210],
+        lineWidthMinPixels: 1.2,
+        extruded: false,
         wireframe: false,
-        getElevation: 4.4,
         material: { ambient: 0.55, diffuse: 0.7, shininess: 18, specularColor: [185, 203, 140] },
       }),
-      new PolygonLayer<PolygonDatum>({
-        id: `ground-tiles-${frameIndex}`,
-        data: groundTiles,
-        getPolygon: (item) => item.polygon,
-        getFillColor: (item) => item.fillColor,
-        getLineColor: (item) => item.lineColor,
-        lineWidthMinPixels: 0.33,
-        extruded: true,
-        wireframe: false,
-        getElevation: (item) => item.elevation,
-        material: { ambient: 0.62, diffuse: 0.6, shininess: 16, specularColor: [182, 201, 132] },
+      new BitmapLayer({
+        id: "base-texture",
+        image: "assets/delta-base-texture.svg",
+        bounds: [scene.bbox.west, scene.bbox.south, scene.bbox.east, scene.bbox.north],
+        opacity: 0.98,
       }),
       new PolygonLayer<PolygonDatum>({
         id: `settlement-blocks-${frameIndex}`,
@@ -301,7 +226,7 @@ export function SceneViewport({
         material: { ambient: 0.58, diffuse: 0.82, shininess: 30, specularColor: [255, 205, 170] },
       }),
     ],
-    [frameIndex, groundTiles, sceneBoard, settlementBlocks],
+    [frameIndex, scene, sceneBoard, settlementBlocks],
   );
 
   return (

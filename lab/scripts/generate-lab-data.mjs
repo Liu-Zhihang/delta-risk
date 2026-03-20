@@ -9,6 +9,7 @@ const sourcePath = path.resolve(labRoot, "..", "sim_data.json");
 const outDir = path.resolve(labRoot, "public", "data");
 const outPath = path.resolve(outDir, "scene-payload.json");
 const assetDir = path.resolve(labRoot, "public", "assets");
+const texturePath = path.resolve(assetDir, "delta-base-texture.svg");
 
 const clamp = (value, min = 0, max = 1) => Math.max(min, Math.min(max, value));
 const round = (value, digits = 3) => Number(value.toFixed(digits));
@@ -22,6 +23,19 @@ const bbox = {
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
+}
+
+function hashValue(input) {
+  let hash = 0;
+  for (let index = 0; index < input.length; index += 1) {
+    hash = (hash << 5) - hash + input.charCodeAt(index);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function seededUnit(input) {
+  return (hashValue(input) % 1000) / 1000;
 }
 
 function normalizeGridDistances(binaryGrid) {
@@ -152,6 +166,133 @@ function cellBounds(row, col, rows, cols) {
 function cellCenter(row, col, rows, cols) {
   const bounds = cellBounds(row, col, rows, cols);
   return [(bounds.west + bounds.east) / 2, (bounds.south + bounds.north) / 2];
+}
+
+function buildBaseTextureSvg(water, farmland, eco) {
+  const rows = water.length;
+  const cols = water[0].length;
+  const width = 1800;
+  const height = Math.round(width * ((bbox.north - bbox.south) / (bbox.east - bbox.west)));
+  const cellWidth = width / cols;
+  const cellHeight = height / rows;
+  const farmlandRects = [];
+  const ecoRects = [];
+  const waterRects = [];
+  const waterHighlights = [];
+  const fieldStrokes = [];
+
+  const localShare = (grid, row, col, radius = 1) => {
+    let count = 0;
+    let total = 0;
+    for (let dr = -radius; dr <= radius; dr += 1) {
+      for (let dc = -radius; dc <= radius; dc += 1) {
+        const nr = row + dr;
+        const nc = col + dc;
+        if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) {
+          continue;
+        }
+        total += 1;
+        count += grid[nr][nc] ? 1 : 0;
+      }
+    }
+    return total ? count / total : 0;
+  };
+
+  for (let row = 0; row < rows; row += 2) {
+    for (let col = 0; col < cols; col += 2) {
+      const x = col * cellWidth;
+      const y = row * cellHeight;
+      const key = `${row}-${col}`;
+      const jx = (seededUnit(`${key}-x`) - 0.5) * cellWidth * 0.18;
+      const jy = (seededUnit(`${key}-y`) - 0.5) * cellHeight * 0.16;
+      const scaleW = 1.38 + seededUnit(`${key}-w`) * 0.44;
+      const scaleH = 1.34 + seededUnit(`${key}-h`) * 0.4;
+      const tone = seededUnit(`${key}-tone`);
+      const farmShare = localShare(farmland, row, col, 1);
+      const ecoShare = localShare(eco, row, col, 1);
+      const waterShare = localShare(water, row, col, 1);
+
+      if (farmShare > 0.18 && waterShare < 0.42) {
+        const fill = tone > 0.66 ? "#a9c87c" : tone > 0.34 ? "#9fc172" : "#95b86b";
+        const rectX = x - cellWidth * 0.2 + jx;
+        const rectY = y - cellHeight * 0.18 + jy;
+        const rectW = cellWidth * (scaleW + farmShare * 0.8);
+        const rectH = cellHeight * (scaleH + farmShare * 0.74);
+        farmlandRects.push(
+          `<rect x="${rectX.toFixed(2)}" y="${rectY.toFixed(2)}" width="${rectW.toFixed(2)}" height="${rectH.toFixed(2)}" rx="${(cellWidth * 0.5).toFixed(2)}" fill="${fill}" opacity="${(0.72 + farmShare * 0.18).toFixed(2)}" />`,
+        );
+
+        if ((row + col) % 4 === 0 && farmShare > 0.42) {
+          const x1 = rectX + rectW * (0.14 + seededUnit(`${key}-l1`) * 0.08);
+          const x2 = rectX + rectW * (0.84 - seededUnit(`${key}-l2`) * 0.08);
+          const y1 = rectY + rectH * (0.18 + seededUnit(`${key}-l3`) * 0.1);
+          const y2 = rectY + rectH * (0.74 + seededUnit(`${key}-l4`) * 0.08);
+          fieldStrokes.push(
+            `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="#7fa15b" stroke-width="${Math.max(0.8, cellWidth * 0.06).toFixed(2)}" stroke-opacity="0.14" stroke-linecap="round" />`,
+          );
+        }
+      } else if (ecoShare > 0.16 && waterShare < 0.35) {
+        const fill = tone > 0.5 ? "#7fa45f" : "#739857";
+        ecoRects.push(
+          `<rect x="${(x - cellWidth * 0.22 + jx * 0.5).toFixed(2)}" y="${(y - cellHeight * 0.22 + jy * 0.5).toFixed(2)}" width="${(cellWidth * (1.52 + ecoShare * 0.62 + seededUnit(`${key}-ew`) * 0.22)).toFixed(2)}" height="${(cellHeight * (1.5 + ecoShare * 0.56 + seededUnit(`${key}-eh`) * 0.2)).toFixed(2)}" rx="${(cellWidth * 0.56).toFixed(2)}" fill="${fill}" opacity="${(0.68 + ecoShare * 0.2).toFixed(2)}" />`,
+        );
+      }
+    }
+  }
+
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      const x = col * cellWidth;
+      const y = row * cellHeight;
+      const key = `${row}-${col}`;
+      const tone = seededUnit(`${key}-wtone`);
+      if (water[row][col]) {
+        const jx = (seededUnit(`${key}-wx`) - 0.5) * cellWidth * 0.12;
+        const jy = (seededUnit(`${key}-wy`) - 0.5) * cellHeight * 0.12;
+        const rectX = x - cellWidth * 0.24 + jx;
+        const rectY = y - cellHeight * 0.18 + jy;
+        const rectW = cellWidth * (1.34 + seededUnit(`${key}-ww`) * 0.2);
+        const rectH = cellHeight * (1.28 + seededUnit(`${key}-wh`) * 0.18);
+        const fill = tone > 0.5 ? "#8ed3ea" : "#7dc8e2";
+        waterRects.push(
+          `<rect x="${rectX.toFixed(2)}" y="${rectY.toFixed(2)}" width="${rectW.toFixed(2)}" height="${rectH.toFixed(2)}" rx="${(cellWidth * 0.42).toFixed(2)}" fill="${fill}" opacity="0.96" />`,
+        );
+        if (seededUnit(`${key}-glint`) > 0.58) {
+          waterHighlights.push(
+            `<rect x="${(rectX + cellWidth * 0.16).toFixed(2)}" y="${(rectY + cellHeight * 0.16).toFixed(2)}" width="${(rectW * 0.72).toFixed(2)}" height="${(rectH * 0.24).toFixed(2)}" rx="${(cellWidth * 0.24).toFixed(2)}" fill="#d6f2fb" opacity="0.22" />`,
+          );
+        }
+      }
+    }
+  }
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <defs>
+    <linearGradient id="landwash" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#b6cd87" />
+      <stop offset="55%" stop-color="#aec980" />
+      <stop offset="100%" stop-color="#a3bf77" />
+    </linearGradient>
+    <radialGradient id="lightwash" cx="28%" cy="22%" r="70%">
+      <stop offset="0%" stop-color="#eff8d7" stop-opacity="0.62" />
+      <stop offset="100%" stop-color="#eff8d7" stop-opacity="0" />
+    </radialGradient>
+    <filter id="waterblur" x="-5%" y="-5%" width="110%" height="110%">
+      <feGaussianBlur stdDeviation="4.6" />
+    </filter>
+    <filter id="fieldsoft" x="-4%" y="-4%" width="108%" height="108%">
+      <feGaussianBlur stdDeviation="1.4" />
+    </filter>
+  </defs>
+  <rect width="${width}" height="${height}" fill="url(#landwash)" />
+  <rect width="${width}" height="${height}" fill="url(#lightwash)" />
+  <g filter="url(#fieldsoft)">${farmlandRects.join("")}</g>
+  <g opacity="0.96">${ecoRects.join("")}</g>
+  <g>${fieldStrokes.join("")}</g>
+  <g filter="url(#waterblur)">${waterRects.join("")}</g>
+  <g>${waterHighlights.join("")}</g>
+</svg>`;
 }
 
 function buildObjects(finalUrban, waterBoost, farmlandGrid) {
@@ -506,7 +647,9 @@ function main() {
   };
 
   fs.mkdirSync(outDir, { recursive: true });
+  fs.mkdirSync(assetDir, { recursive: true });
   fs.writeFileSync(outPath, JSON.stringify(payload), "utf8");
+  fs.writeFileSync(texturePath, buildBaseTextureSvg(water, farmland, eco), "utf8");
 
   copyAsset(path.resolve(labRoot, "..", "output", "_repo_web_final_v2.png"), path.resolve(assetDir, "preview-hero.png"));
   copyAsset(path.resolve(labRoot, "..", "output", "rccu_snapshots_iso.png"), path.resolve(assetDir, "preview-timeline.png"));
