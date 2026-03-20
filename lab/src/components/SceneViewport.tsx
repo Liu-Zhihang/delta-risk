@@ -524,19 +524,6 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
       ctx.translate(view.offsetX, view.offsetY);
       ctx.scale(view.scale, view.scale);
 
-      ctx.fillStyle = scene.shadow;
-      ctx.beginPath();
-      ctx.ellipse(
-        board.originX,
-        board.originY + board.height * 0.58,
-        board.width * 0.42,
-        board.height * 0.24,
-        0,
-        0,
-        Math.PI * 2,
-      );
-      ctx.fill();
-
       const rows = simView.grid.rows;
       const cols = simView.grid.cols;
       const farmlandEnv = simView.env?.farmland ?? [];
@@ -646,11 +633,11 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
       event.preventDefault();
       canvas.setPointerCapture(event.pointerId);
       dragRef.current = {
-        mode: event.button === 2 || event.shiftKey ? "rotate" : "pan",
+        mode: event.button === 1 || event.shiftKey ? "pan" : "rotate",
         lastX: event.clientX,
         lastY: event.clientY,
       };
-      canvas.style.cursor = dragRef.current.mode === "rotate" ? "ew-resize" : "grabbing";
+      canvas.style.cursor = dragRef.current.mode === "rotate" ? "grabbing" : "move";
     };
 
     const onPointerMove = (event: PointerEvent) => {
@@ -662,6 +649,7 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
       const dy = event.clientY - lastY;
       if (mode === "rotate") {
         viewRef.current.rotation += dx * 0.008;
+        viewRef.current.offsetY += dy * 0.18;
       } else {
         viewRef.current.offsetX += dx;
         viewRef.current.offsetY += dy;
