@@ -64,8 +64,8 @@ type ViewState = {
 };
 
 const DEFAULT_VIEW: ViewState = {
-  scale: 1.22,
-  offsetX: 0,
+  scale: 1.36,
+  offsetX: -120,
   offsetY: 0,
   rotation: 0.82,
 };
@@ -117,14 +117,14 @@ function computeBoardLayout(width: number, height: number, simView: SimViewData)
   const availH = height * 0.88;
   const tileWByWidth = availW / ((rows + cols) * 0.54);
   const tileWByHeight = availH / (((rows + cols) * 0.25) + 9.5);
-  const tileW = clamp(Math.min(tileWByWidth, tileWByHeight), 10.5, 30);
+  const tileW = clamp(Math.min(tileWByWidth, tileWByHeight), 11.5, 32);
   const tileH = tileW * 0.48;
   const boardW = (rows + cols) * tileW * 0.5;
   const boardH = (rows + cols) * tileH * 0.5;
   const maxTowerH = tileH * 13.8;
 
   return {
-    originX: width / 2,
+    originX: width / 2 - 24,
     originY: 138 + maxTowerH * 0.92,
     width: boardW,
     height: boardH,
@@ -136,16 +136,12 @@ function computeBoardLayout(width: number, height: number, simView: SimViewData)
   };
 }
 
-function isoPoint(r: number, c: number, board: BoardLayout, rotation = 0) {
+function isoPoint(r: number, c: number, board: BoardLayout) {
   const gx = c - board.centerCol;
   const gy = r - board.centerRow;
-  const cos = Math.cos(rotation);
-  const sin = Math.sin(rotation);
-  const rx = gx * cos - gy * sin;
-  const ry = gx * sin + gy * cos;
   return {
-    x: board.originX + (rx - ry) * board.tileW * 0.5,
-    y: board.originY + (rx + ry) * board.tileH * 0.5,
+    x: board.originX + (gx - gy) * board.tileW * 0.5,
+    y: board.originY + (gx + gy) * board.tileH * 0.5,
   };
 }
 
@@ -190,19 +186,21 @@ function drawPrism(
   outline: string | null = null,
 ) {
   const topY = y - lift;
+  const topW = w * 1.08;
+  const topH = h * 1.08;
 
   ctx.beginPath();
-  ctx.moveTo(x, topY - h / 2);
-  ctx.lineTo(x + w / 2, topY);
-  ctx.lineTo(x, topY + h / 2);
-  ctx.lineTo(x - w / 2, topY);
+  ctx.moveTo(x, topY - topH / 2);
+  ctx.lineTo(x + topW / 2, topY);
+  ctx.lineTo(x, topY + topH / 2);
+  ctx.lineTo(x - topW / 2, topY);
   ctx.closePath();
   ctx.fillStyle = top;
   ctx.fill();
 
   ctx.beginPath();
-  ctx.moveTo(x - w / 2, topY);
-  ctx.lineTo(x, topY + h / 2);
+  ctx.moveTo(x - topW / 2, topY);
+  ctx.lineTo(x, topY + topH / 2);
   ctx.lineTo(x, y + h / 2);
   ctx.lineTo(x - w / 2, y);
   ctx.closePath();
@@ -210,8 +208,8 @@ function drawPrism(
   ctx.fill();
 
   ctx.beginPath();
-  ctx.moveTo(x + w / 2, topY);
-  ctx.lineTo(x, topY + h / 2);
+  ctx.moveTo(x + topW / 2, topY);
+  ctx.lineTo(x, topY + topH / 2);
   ctx.lineTo(x, y + h / 2);
   ctx.lineTo(x + w / 2, y);
   ctx.closePath();
@@ -263,15 +261,15 @@ function drawFarmland(
   );
 
   ctx.save();
-  ctx.strokeStyle = scene.farmLine;
-  ctx.lineWidth = 0.8;
+  ctx.strokeStyle = "rgba(128, 176, 104, 0.18)";
+  ctx.lineWidth = 0.7;
   for (let index = -1; index <= 1; index += 1) {
-    const phase = hash01(r, c, index);
+    const phase = hash01(r, c, index + 8);
     ctx.beginPath();
-    ctx.moveTo(x - board.tileW * 0.28 + index * board.tileW * 0.16, y - board.tileH * 0.02);
+    ctx.moveTo(x - board.tileW * 0.22 + index * board.tileW * 0.14, y - board.tileH * (0.02 + phase * 0.05));
     ctx.lineTo(
-      x + board.tileW * 0.02 + index * board.tileW * 0.16,
-      y - board.tileH * 0.21 - phase * board.tileH * 0.05,
+      x + board.tileW * 0.16 + index * board.tileW * 0.12,
+      y - board.tileH * (0.18 + phase * 0.06),
     );
     ctx.stroke();
   }
@@ -422,16 +420,16 @@ function drawSettlement(
 
 function drawWaterTile(ctx: CanvasRenderingContext2D, x: number, y: number, board: BoardLayout, scene: ScenePalette) {
   const topY = y - board.tileH * 0.14;
-  drawDiamond(ctx, x, topY, board.tileW * 1.04, board.tileH * 1.04, scene.water, null);
+  drawDiamond(ctx, x, topY, board.tileW * 1.18, board.tileH * 1.18, scene.water, null);
 
   ctx.save();
-  ctx.globalAlpha = 0.18;
+  ctx.globalAlpha = 0.14;
   ctx.fillStyle = scene.waterShine;
   ctx.beginPath();
-  ctx.moveTo(x - board.tileW * 0.22, topY - board.tileH * 0.08);
-  ctx.lineTo(x + board.tileW * 0.04, topY - board.tileH * 0.18);
-  ctx.lineTo(x + board.tileW * 0.26, topY - board.tileH * 0.04);
-  ctx.lineTo(x - board.tileW * 0.02, topY + board.tileH * 0.06);
+  ctx.moveTo(x - board.tileW * 0.18, topY - board.tileH * 0.06);
+  ctx.lineTo(x + board.tileW * 0.06, topY - board.tileH * 0.14);
+  ctx.lineTo(x + board.tileW * 0.22, topY - board.tileH * 0.02);
+  ctx.lineTo(x - board.tileW * 0.02, topY + board.tileH * 0.04);
   ctx.closePath();
   ctx.fill();
   ctx.restore();
@@ -472,6 +470,9 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
       ctx.save();
       ctx.translate(view.offsetX, view.offsetY);
       ctx.scale(view.scale, view.scale);
+      ctx.translate(board.originX, board.originY);
+      ctx.rotate(view.rotation);
+      ctx.translate(-board.originX, -board.originY);
 
       const rows = simView.grid.rows;
       const cols = simView.grid.cols;
@@ -496,7 +497,7 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
           const heightValue = frame.height?.[row]?.[col] ?? density;
           const farmNearby = farmlandEnv[row]?.[col] ?? 0;
           const ecoNearby = ecoEnv[row]?.[col] ?? 0;
-          const { x, y } = isoPoint(row, col, board, view.rotation);
+          const { x, y } = isoPoint(row, col, board);
           cells.push({ row, col, kind, density, heightValue, farmNearby, ecoNearby, x, y });
         }
       }
