@@ -19,13 +19,13 @@ const SCENE_META: Record<
   }
 > = {
   nature: {
-    toggle: "Risk Pattern",
-    title: "Constrained Risk Pattern",
+    toggle: "Hazard Pattern",
+    title: "Hazard-Constrained Delta Growth",
     metrics: ["linearity", "lowRedundancy", "exposureConcentration", "lockInScore"],
   },
   cities: {
-    toggle: "Prototype Form",
-    title: "Pearl River Delta Prototype",
+    toggle: "Corridor Pattern",
+    title: "River-Constrained Delta Growth",
     metrics: ["rccuScore", "nearWaterCoupling", "croplandEmbedding", "emergenceCurve"],
   },
 };
@@ -35,17 +35,17 @@ const METRIC_LABELS: Record<string, string> = {
   lowRedundancy: "Low redundancy",
   exposureConcentration: "Exposure concentration",
   lockInScore: "Lock-in score",
-  rccuScore: "Prototype score",
+  rccuScore: "Corridor score",
   nearWaterCoupling: "Near-water coupling",
   croplandEmbedding: "Cropland embedding",
-  emergenceCurve: "Emergence strength",
+  emergenceCurve: "Emergence",
 };
 
 const LEGEND_ITEMS = [
-  { label: "Waterways", className: "is-water" },
-  { label: "Cropland", className: "is-cropland" },
-  { label: "Ecology", className: "is-ecology" },
-  { label: "Settlements", className: "is-settlement" },
+  { label: "Water", className: "is-water" },
+  { label: "Farmland", className: "is-cropland" },
+  { label: "Eco reserve", className: "is-ecology" },
+  { label: "Settlement", className: "is-settlement" },
 ] as const;
 
 function App() {

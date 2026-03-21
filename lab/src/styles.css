@@ -33,9 +33,9 @@ body,
 body {
   margin: 0;
   background:
-    radial-gradient(circle at top left, rgba(176, 205, 137, 0.28), transparent 26%),
-    radial-gradient(circle at 82% 18%, rgba(123, 183, 203, 0.2), transparent 22%),
-    linear-gradient(180deg, #f7f2ea 0%, #f4efe6 100%);
+    radial-gradient(circle at top left, rgba(176, 205, 137, 0.18), transparent 26%),
+    radial-gradient(circle at 82% 18%, rgba(123, 183, 203, 0.14), transparent 22%),
+    linear-gradient(180deg, #f6f1e8 0%, #f1ebe1 100%);
   color: var(--ink);
 }
 
@@ -136,10 +136,7 @@ button {
   overflow: hidden;
   border-radius: 30px;
   border: 1px solid rgba(158, 180, 110, 0.22);
-  background:
-    radial-gradient(circle at 18% 18%, rgba(205, 223, 179, 0.46), transparent 28%),
-    radial-gradient(circle at 80% 14%, rgba(186, 220, 232, 0.34), transparent 24%),
-    linear-gradient(180deg, #edf3e2 0%, #e4edd8 100%);
+  background: linear-gradient(180deg, #f2eee7 0%, #e9e2d8 100%);
   height: clamp(690px, calc(100vh - 190px), 860px);
   min-height: 690px;
 }
@@ -149,7 +146,7 @@ button {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.03));
 }
 
 .scene-pane {
@@ -296,17 +293,18 @@ button {
 }
 
 .scene-controls button {
-  min-width: 40px;
+  min-width: 44px;
   height: 40px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.84);
   color: var(--ink);
+  padding: 0 14px;
 }
 
 .scene-controls__reset {
   padding: 0 14px;
-  min-width: auto;
+  min-width: 74px;
 }
 
 .timeline-window input[type="range"] {

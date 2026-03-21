@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 
-import type { LayerKey, SandboxControls, ScenePayload, SimViewData, TrackId, ViewMode } from "../types";
+import type { LayerKey, SandboxControls, ScenePayload, SimViewData, SimViewFrame, TrackId, ViewMode } from "../types";
 
 type SceneViewportProps = {
   scene: ScenePayload;
@@ -13,479 +13,308 @@ type SceneViewportProps = {
   layers: Record<LayerKey, boolean>;
 };
 
-type ScenePalette = {
-  bg: string;
-  shadow: string;
-  water: string;
-  waterEdge: string;
-  waterShine: string;
-  farmTop: string;
-  farmLeft: string;
-  farmRight: string;
-  farmLine: string;
-  ecoTop: string;
-  ecoLeft: string;
-  ecoRight: string;
-  bareTop: string;
-  bareLeft: string;
-  bareRight: string;
-  urbanPodiumTop: string;
-  urbanPodiumLeft: string;
-  urbanPodiumRight: string;
-  urbanMainTop: string;
-  urbanMainLeft: string;
-  urbanMainRight: string;
-  urbanTowerTop: string;
-  urbanTowerTopAlt: string;
-  urbanTowerLeft: string;
-  urbanTowerLeftAlt: string;
-  urbanTowerRight: string;
-  urbanTowerRightAlt: string;
-  urbanGlass: string;
-};
-
-type BoardLayout = {
-  originX: number;
-  originY: number;
-  width: number;
-  height: number;
-  maxTowerH: number;
-  tileW: number;
-  tileH: number;
-  centerRow: number;
-  centerCol: number;
-};
+type Matrix = number[][];
+type Rgb = [number, number, number];
 
 type ViewState = {
-  scale: number;
+  zoom: number;
   offsetX: number;
   offsetY: number;
-  rotation: number;
 };
 
-const DISPLAY_SUBDIVISION = 2;
+type BaseRaster = {
+  rows: number;
+  cols: number;
+  pixels: Uint8ClampedArray;
+};
 
 const DEFAULT_VIEW: ViewState = {
-  scale: 1.82,
-  offsetX: -250,
-  offsetY: 22,
-  rotation: 0.06,
+  zoom: 1,
+  offsetX: -4,
+  offsetY: 0,
 };
 
-const DAY_SCENE: ScenePalette = {
-  bg: "#f7f3ec",
-  shadow: "rgba(188, 168, 142, 0.16)",
-  water: "#6bc3f3",
-  waterEdge: "#2f97d7",
-  waterShine: "rgba(255,255,255,0.58)",
-  farmTop: "#9ed97d",
-  farmLeft: "#78c66a",
-  farmRight: "#63ba5e",
-  farmLine: "rgba(255,255,255,0.24)",
-  ecoTop: "#5ea65b",
-  ecoLeft: "#3a7d40",
-  ecoRight: "#33713b",
-  bareTop: "#eadfd4",
-  bareLeft: "#dccdbf",
-  bareRight: "#d4c2b3",
-  urbanPodiumTop: "#f7ebe4",
-  urbanPodiumLeft: "#efcabc",
-  urbanPodiumRight: "#e0ab93",
-  urbanMainTop: "#fff2eb",
-  urbanMainLeft: "#f4ddd2",
-  urbanMainRight: "#e8bca5",
-  urbanTowerTop: "#ff875c",
-  urbanTowerTopAlt: "#ffab87",
-  urbanTowerLeft: "#f8e2d6",
-  urbanTowerLeftAlt: "#f2d5c8",
-  urbanTowerRight: "#d79a80",
-  urbanTowerRightAlt: "#ddb099",
-  urbanGlass: "rgba(115, 194, 245, 0.62)",
+const MIN_ZOOM = 0.82;
+const MAX_ZOOM = 4.2;
+
+const COLORS = {
+  background: "#f1ede6",
+  bare: [239, 235, 233] as Rgb,
+  farmLight: [165, 214, 167] as Rgb,
+  farmMid: [102, 187, 106] as Rgb,
+  ecoMid: [46, 125, 50] as Rgb,
+  ecoDeep: [27, 94, 32] as Rgb,
+  dike: [120, 144, 156] as Rgb,
+  waterMid: [33, 150, 243] as Rgb,
+  waterDeep: [21, 101, 192] as Rgb,
 };
 
-function clamp(value: number, min: number, max: number) {
+const URBAN_RAMP = [
+  { position: 0.0, color: [239, 235, 233] as Rgb, alpha: 0.0 },
+  { position: 0.12, color: [239, 235, 233] as Rgb, alpha: 0.0 },
+  { position: 0.25, color: [255, 171, 145] as Rgb, alpha: 0.6 },
+  { position: 0.45, color: [255, 112, 67] as Rgb, alpha: 0.8 },
+  { position: 0.6, color: [244, 81, 30] as Rgb, alpha: 0.9 },
+  { position: 0.78, color: [230, 74, 25] as Rgb, alpha: 0.95 },
+  { position: 1.0, color: [191, 54, 12] as Rgb, alpha: 1.0 },
+] as const;
+
+function clamp(value: number, min = 0, max = 1) {
   return Math.max(min, Math.min(max, value));
 }
 
-function hash01(a: number, b: number, c = 0) {
-  const value = Math.sin(a * 127.1 + b * 311.7 + c * 29.3) * 43758.5453123;
-  return value - Math.floor(value);
+function createMatrix(rows: number, cols: number, fill = 0): Matrix {
+  return Array.from({ length: rows }, () => Array(cols).fill(fill));
 }
 
-function computeBoardLayout(width: number, height: number, rows: number, cols: number): BoardLayout {
-  const availW = width * 0.98;
-  const availH = height * 0.88;
-  const tileWByWidth = availW / ((rows + cols) * 0.54);
-  const tileWByHeight = availH / (((rows + cols) * 0.25) + 9.5);
-  const tileW = clamp(Math.min(tileWByWidth, tileWByHeight), 11.5, 32);
-  const tileH = tileW * 0.48;
-  const boardW = (rows + cols) * tileW * 0.5;
-  const boardH = (rows + cols) * tileH * 0.5;
-  const maxTowerH = tileH * 13.8;
-
-  return {
-    originX: width / 2 - 24,
-    originY: 138 + maxTowerH * 0.92,
-    width: boardW,
-    height: boardH,
-    maxTowerH,
-    tileW,
-    tileH,
-    centerRow: (rows - 1) / 2,
-    centerCol: (cols - 1) / 2,
-  };
+function copyMatrix(matrix: Matrix): Matrix {
+  return matrix.map((row) => [...row]);
 }
 
-function clampIndex(value: number, max: number) {
-  return Math.max(0, Math.min(max, value));
+function matrixFromPredicate(tiles: number[][], predicate: (kind: number) => boolean): Matrix {
+  return tiles.map((row) => row.map((kind) => (predicate(kind) ? 1 : 0)));
 }
 
-function bilinearSample(grid: number[][] | undefined, rowPos: number, colPos: number, fallback = 0) {
-  if (!grid?.length || !grid[0]?.length) {
-    return fallback;
-  }
-  const maxRow = grid.length - 1;
-  const maxCol = grid[0].length - 1;
-  const r0 = clampIndex(Math.floor(rowPos), maxRow);
-  const c0 = clampIndex(Math.floor(colPos), maxCol);
-  const r1 = clampIndex(r0 + 1, maxRow);
-  const c1 = clampIndex(c0 + 1, maxCol);
-  const tr = Math.max(0, Math.min(1, rowPos - Math.floor(rowPos)));
-  const tc = Math.max(0, Math.min(1, colPos - Math.floor(colPos)));
-  const v00 = grid[r0]?.[c0] ?? fallback;
-  const v01 = grid[r0]?.[c1] ?? fallback;
-  const v10 = grid[r1]?.[c0] ?? fallback;
-  const v11 = grid[r1]?.[c1] ?? fallback;
-  const top = v00 * (1 - tc) + v01 * tc;
-  const bottom = v10 * (1 - tc) + v11 * tc;
-  return top * (1 - tr) + bottom * tr;
-}
-
-function isoPoint(r: number, c: number, board: BoardLayout) {
-  const gx = c - board.centerCol;
-  const gy = r - board.centerRow;
-  return {
-    x: board.originX + (gx - gy) * board.tileW * 0.5,
-    y: board.originY + (gx + gy) * board.tileH * 0.5,
-  };
-}
-
-function drawDiamond(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  fill: string,
-  stroke: string | null = null,
-  alpha = 1,
-) {
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.beginPath();
-  ctx.moveTo(x, y - h / 2);
-  ctx.lineTo(x + w / 2, y);
-  ctx.lineTo(x, y + h / 2);
-  ctx.lineTo(x - w / 2, y);
-  ctx.closePath();
-  ctx.fillStyle = fill;
-  ctx.fill();
-  if (stroke) {
-    ctx.strokeStyle = stroke;
-    ctx.lineWidth = 0.8;
-    ctx.stroke();
-  }
-  ctx.restore();
-}
-
-function drawPrism(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  lift: number,
-  top: string,
-  left: string,
-  right: string,
-  outline: string | null = null,
-) {
-  const topY = y - lift;
-  const topW = w * 1.08;
-  const topH = h * 1.08;
-
-  ctx.beginPath();
-  ctx.moveTo(x, topY - topH / 2);
-  ctx.lineTo(x + topW / 2, topY);
-  ctx.lineTo(x, topY + topH / 2);
-  ctx.lineTo(x - topW / 2, topY);
-  ctx.closePath();
-  ctx.fillStyle = top;
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.moveTo(x - topW / 2, topY);
-  ctx.lineTo(x, topY + topH / 2);
-  ctx.lineTo(x, y + h / 2);
-  ctx.lineTo(x - w / 2, y);
-  ctx.closePath();
-  ctx.fillStyle = left;
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.moveTo(x + topW / 2, topY);
-  ctx.lineTo(x, topY + topH / 2);
-  ctx.lineTo(x, y + h / 2);
-  ctx.lineTo(x + w / 2, y);
-  ctx.closePath();
-  ctx.fillStyle = right;
-  ctx.fill();
-
-  if (outline) {
-    ctx.strokeStyle = outline;
-    ctx.lineWidth = 0.8;
-    ctx.stroke();
-  }
-}
-
-function drawBare(ctx: CanvasRenderingContext2D, x: number, y: number, board: BoardLayout, scene: ScenePalette) {
-  drawPrism(
-    ctx,
-    x,
-    y,
-    board.tileW,
-    board.tileH,
-    board.tileH * 0.12,
-    scene.bareTop,
-    scene.bareLeft,
-    scene.bareRight,
-    "rgba(180,150,135,0.18)",
-  );
-}
-
-function drawFarmland(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  r: number,
-  c: number,
-  board: BoardLayout,
-  scene: ScenePalette,
-) {
-  drawPrism(
-    ctx,
-    x,
-    y,
-    board.tileW,
-    board.tileH,
-    board.tileH * 0.18,
-    scene.farmTop,
-    scene.farmLeft,
-    scene.farmRight,
-    null,
-  );
-
-  ctx.save();
-  ctx.strokeStyle = "rgba(128, 176, 104, 0.18)";
-  ctx.lineWidth = 0.7;
-  for (let index = -1; index <= 1; index += 1) {
-    const phase = hash01(r, c, index + 8);
-    ctx.beginPath();
-    ctx.moveTo(x - board.tileW * 0.22 + index * board.tileW * 0.14, y - board.tileH * (0.02 + phase * 0.05));
-    ctx.lineTo(
-      x + board.tileW * 0.16 + index * board.tileW * 0.12,
-      y - board.tileH * (0.18 + phase * 0.06),
-    );
-    ctx.stroke();
-  }
-  ctx.restore();
-}
-
-function drawEco(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  r: number,
-  c: number,
-  board: BoardLayout,
-  scene: ScenePalette,
-) {
-  drawPrism(
-    ctx,
-    x,
-    y,
-    board.tileW,
-    board.tileH,
-    board.tileH * 0.22,
-    scene.ecoTop,
-    scene.ecoLeft,
-    scene.ecoRight,
-    null,
-  );
-
-  const crowns = 2 + Math.round(hash01(r, c, 5) * 1.5);
-  for (let index = 0; index < crowns; index += 1) {
-    const dx = (hash01(r, c, 20 + index) - 0.5) * board.tileW * 0.26;
-    const dy = (hash01(r, c, 30 + index) - 0.5) * board.tileH * 0.18;
-    const radius = board.tileH * (0.18 + hash01(r, c, 40 + index) * 0.12);
-    ctx.fillStyle = index % 2 ? "#347f38" : "#57b45a";
-    ctx.beginPath();
-    ctx.arc(x + dx, y - board.tileH * 0.54 + dy, radius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#5b4535";
-    ctx.fillRect(x + dx - 0.8, y - board.tileH * 0.38 + dy, 1.6, board.tileH * 0.2);
-  }
-}
-
-function drawSettlement(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  density: number,
-  heightValue: number,
-  r: number,
-  c: number,
-  board: BoardLayout,
-  scene: ScenePalette,
-) {
-  const podiumLift = board.tileH * 0.2;
-  drawPrism(
-    ctx,
-    x,
-    y,
-    board.tileW,
-    board.tileH,
-    podiumLift,
-    scene.urbanPodiumTop,
-    scene.urbanPodiumLeft,
-    scene.urbanPodiumRight,
-    "rgba(255,255,255,0.4)",
-  );
-
-  ctx.save();
-  ctx.fillStyle = "rgba(197, 108, 67, 0.14)";
-  ctx.beginPath();
-  ctx.ellipse(
-    x + board.tileW * 0.08,
-    y + board.tileH * 0.18,
-    board.tileW * 0.28,
-    board.tileH * 0.14,
-    0.18,
-    0,
-    Math.PI * 2,
-  );
-  ctx.fill();
-  ctx.restore();
-
-  const h = Math.pow(clamp(heightValue ?? density, 0, 1), 0.76);
-  const compact = Math.pow(clamp(density, 0, 1), 0.88);
-
-  drawPrism(
-    ctx,
-    x + board.tileW * 0.02,
-    y - podiumLift * 0.46,
-    board.tileW * 0.54,
-    board.tileH * 0.24,
-    board.tileH * (0.28 + h * 0.32),
-    scene.urbanMainTop,
-    scene.urbanMainLeft,
-    scene.urbanMainRight,
-    null,
-  );
-
-  const towers: Array<{ dx: number; dy: number; w: number; d: number; h: number }> = [];
-  if (h > 0.08) {
-    towers.push({
-      dx: 0,
-      dy: 0,
-      w: board.tileW * 0.52,
-      d: board.tileH * 0.4,
-      h: board.tileH * (0.72 + h * 1.9),
-    });
-  }
-  if (h > 0.24 || compact > 0.48) {
-    towers.push({
-      dx: -board.tileW * 0.2,
-      dy: board.tileH * 0.05,
-      w: board.tileW * 0.3,
-      d: board.tileH * 0.24,
-      h: board.tileH * (0.48 + h * 1.1),
-    });
-  }
-  if (h > 0.5) {
-    towers.push({
-      dx: board.tileW * 0.22,
-      dy: -board.tileH * 0.03,
-      w: board.tileW * 0.26,
-      d: board.tileH * 0.22,
-      h: board.tileH * (0.44 + h * 0.82),
-    });
+function blurPass(input: Matrix, radius: number): Matrix {
+  if (radius <= 0) {
+    return copyMatrix(input);
   }
 
-  towers.forEach((tower, index) => {
-    const jitter = (hash01(r, c, 80 + index) - 0.5) * board.tileW * 0.04;
-    const bx = x + tower.dx + jitter;
-    const by = y - podiumLift * 0.9 + tower.dy;
-    const top = index === 0 ? scene.urbanTowerTop : scene.urbanTowerTopAlt;
-    const left = index === 0 ? scene.urbanTowerLeft : scene.urbanTowerLeftAlt;
-    const right = index === 0 ? scene.urbanTowerRight : scene.urbanTowerRightAlt;
-    drawPrism(ctx, bx, by, tower.w, tower.d, tower.h, top, left, right, null);
+  const rows = input.length;
+  const cols = input[0]?.length ?? 0;
+  const horizontal = createMatrix(rows, cols, 0);
+  const vertical = createMatrix(rows, cols, 0);
+  const window = radius * 2 + 1;
 
-    const windows = Math.max(1, Math.floor(tower.h / (board.tileH * 0.7)));
-    ctx.save();
-    ctx.fillStyle = scene.urbanGlass;
-    for (let row = 0; row < windows; row += 1) {
-      const wy = by - tower.h + tower.d * 0.55 + row * board.tileH * 0.44;
-      ctx.fillRect(bx - tower.w * 0.22, wy, tower.w * 0.1, board.tileH * 0.11);
-      ctx.fillRect(bx + tower.w * 0.02, wy + board.tileH * 0.03, tower.w * 0.14, board.tileH * 0.11);
+  for (let row = 0; row < rows; row += 1) {
+    let sum = 0;
+    for (let col = -radius; col <= radius; col += 1) {
+      const sampleCol = Math.max(0, Math.min(cols - 1, col));
+      sum += input[row][sampleCol];
     }
-    ctx.restore();
-  });
+    for (let col = 0; col < cols; col += 1) {
+      horizontal[row][col] = sum / window;
+      const left = Math.max(0, col - radius);
+      const right = Math.min(cols - 1, col + radius + 1);
+      sum += input[row][right] - input[row][left];
+    }
+  }
+
+  for (let col = 0; col < cols; col += 1) {
+    let sum = 0;
+    for (let row = -radius; row <= radius; row += 1) {
+      const sampleRow = Math.max(0, Math.min(rows - 1, row));
+      sum += horizontal[sampleRow][col];
+    }
+    for (let row = 0; row < rows; row += 1) {
+      vertical[row][col] = sum / window;
+      const top = Math.max(0, row - radius);
+      const bottom = Math.min(rows - 1, row + radius + 1);
+      sum += horizontal[bottom][col] - horizontal[top][col];
+    }
+  }
+
+  return vertical;
 }
 
-function drawWaterTile(ctx: CanvasRenderingContext2D, x: number, y: number, board: BoardLayout, scene: ScenePalette) {
-  const topY = y - board.tileH * 0.14;
-  drawDiamond(ctx, x, topY, board.tileW * 1.18, board.tileH * 1.18, scene.water, null);
+function blurMatrix(input: Matrix, radius: number, passes = 1): Matrix {
+  let current = copyMatrix(input);
+  for (let pass = 0; pass < passes; pass += 1) {
+    current = blurPass(current, radius);
+  }
+  return current;
+}
+
+function paintLayer(base: Float32Array, rows: number, cols: number, mask: Matrix, color: Rgb, alpha: number) {
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      const weight = clamp(mask[row][col]) * alpha;
+      if (weight <= 0.0001) {
+        continue;
+      }
+      const index = (row * cols + col) * 3;
+      base[index] = base[index] * (1 - weight) + color[0] * weight;
+      base[index + 1] = base[index + 1] * (1 - weight) + color[1] * weight;
+      base[index + 2] = base[index + 2] * (1 - weight) + color[2] * weight;
+    }
+  }
+}
+
+function buildBaseRaster(simView: SimViewData): BaseRaster {
+  const rows = simView.grid.rows;
+  const cols = simView.grid.cols;
+  const frame0 = simView.frames[0];
+
+  const waterBinary = simView.env?.water ?? matrixFromPredicate(frame0.tiles, (kind) => kind === 2);
+  const farmland = simView.env?.farmland ?? matrixFromPredicate(frame0.tiles, (kind) => kind === 1);
+  const eco = simView.env?.eco ?? matrixFromPredicate(frame0.tiles, (kind) => kind === 3);
+
+  const waterField = blurMatrix(waterBinary, 2, 3);
+  const farmSoft = blurMatrix(farmland, 1, 2);
+  const ecoSoft = blurMatrix(eco, 1, 2);
+  const dikes = createMatrix(rows, cols, 0);
+
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      dikes[row][col] = clamp((waterField[row][col] - waterBinary[row][col] * 0.78 - 0.06) * 1.7);
+    }
+  }
+
+  const base = new Float32Array(rows * cols * 3);
+  for (let index = 0; index < rows * cols; index += 1) {
+    base[index * 3] = COLORS.bare[0];
+    base[index * 3 + 1] = COLORS.bare[1];
+    base[index * 3 + 2] = COLORS.bare[2];
+  }
+
+  paintLayer(base, rows, cols, farmSoft, COLORS.farmLight, 0.85);
+  paintLayer(
+    base,
+    rows,
+    cols,
+    farmSoft.map((row) => row.map((value) => clamp(value * 1.5))),
+    COLORS.farmMid,
+    0.45,
+  );
+  paintLayer(base, rows, cols, ecoSoft, COLORS.ecoMid, 0.8);
+  paintLayer(
+    base,
+    rows,
+    cols,
+    ecoSoft.map((row) => row.map((value) => clamp((value - 0.25) * 1.8))),
+    COLORS.ecoDeep,
+    0.5,
+  );
+  paintLayer(base, rows, cols, dikes, COLORS.dike, 0.28);
+  paintLayer(base, rows, cols, waterBinary, COLORS.waterMid, 0.96);
+  paintLayer(
+    base,
+    rows,
+    cols,
+    waterField.map((row) => row.map((value) => clamp((value - 0.34) * 2.3))),
+    COLORS.waterDeep,
+    0.58,
+  );
+
+  const pixels = new Uint8ClampedArray(rows * cols * 4);
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      const source = (row * cols + col) * 3;
+      const target = (row * cols + col) * 4;
+      pixels[target] = Math.round(clamp(base[source], 0, 255));
+      pixels[target + 1] = Math.round(clamp(base[source + 1], 0, 255));
+      pixels[target + 2] = Math.round(clamp(base[source + 2], 0, 255));
+      pixels[target + 3] = 255;
+    }
+  }
+
+  return { rows, cols, pixels };
+}
+
+function sampleUrbanRamp(value: number) {
+  const clamped = clamp(value);
+  for (let index = 0; index < URBAN_RAMP.length - 1; index += 1) {
+    const start = URBAN_RAMP[index];
+    const end = URBAN_RAMP[index + 1];
+    if (clamped <= end.position) {
+      const span = Math.max(0.0001, end.position - start.position);
+      const t = clamp((clamped - start.position) / span);
+      return {
+        color: [
+          start.color[0] + (end.color[0] - start.color[0]) * t,
+          start.color[1] + (end.color[1] - start.color[1]) * t,
+          start.color[2] + (end.color[2] - start.color[2]) * t,
+        ] as Rgb,
+        alpha: start.alpha + (end.alpha - start.alpha) * t,
+      };
+    }
+  }
+
+  const last = URBAN_RAMP[URBAN_RAMP.length - 1];
+  return { color: last.color, alpha: last.alpha };
+}
+
+function buildFrameImage(baseRaster: BaseRaster, frame: SimViewFrame) {
+  const { rows, cols } = baseRaster;
+  const pixels = new Uint8ClampedArray(baseRaster.pixels);
+  const settlementMask = matrixFromPredicate(frame.tiles, (kind) => kind === 4 || kind === 5);
+  const urbanSoft = blurMatrix(frame.density, 2, 2);
+  const urbanSeeds = blurMatrix(settlementMask, 1, 1);
+
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      const fieldValue = clamp(Math.pow(Math.max(urbanSoft[row][col], urbanSeeds[row][col] * 0.24), 0.86));
+      if (fieldValue <= 0.02) {
+        continue;
+      }
+      const { color, alpha } = sampleUrbanRamp(fieldValue);
+      const index = (row * cols + col) * 4;
+      pixels[index] = Math.round(pixels[index] * (1 - alpha) + color[0] * alpha);
+      pixels[index + 1] = Math.round(pixels[index + 1] * (1 - alpha) + color[1] * alpha);
+      pixels[index + 2] = Math.round(pixels[index + 2] * (1 - alpha) + color[2] * alpha);
+    }
+  }
+
+  return new ImageData(pixels, cols, rows);
+}
+
+function computeFitScale(width: number, height: number, cols: number, rows: number) {
+  return Math.min((width - 72) / cols, (height - 72) / rows);
+}
+
+function drawScene(
+  ctx: CanvasRenderingContext2D,
+  rasterCanvas: HTMLCanvasElement,
+  width: number,
+  height: number,
+  view: ViewState,
+  rows: number,
+  cols: number,
+) {
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = COLORS.background;
+  ctx.fillRect(0, 0, width, height);
+
+  const fitScale = computeFitScale(width, height, cols, rows);
+  const drawWidth = cols * fitScale * view.zoom;
+  const drawHeight = rows * fitScale * view.zoom;
+  const x = (width - drawWidth) / 2 + view.offsetX;
+  const y = (height - drawHeight) / 2 + view.offsetY;
 
   ctx.save();
-  ctx.globalAlpha = 0.14;
-  ctx.fillStyle = scene.waterShine;
-  ctx.beginPath();
-  ctx.moveTo(x - board.tileW * 0.18, topY - board.tileH * 0.06);
-  ctx.lineTo(x + board.tileW * 0.06, topY - board.tileH * 0.14);
-  ctx.lineTo(x + board.tileW * 0.22, topY - board.tileH * 0.02);
-  ctx.lineTo(x - board.tileW * 0.02, topY + board.tileH * 0.04);
-  ctx.closePath();
-  ctx.fill();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.shadowColor = "rgba(106, 93, 76, 0.16)";
+  ctx.shadowBlur = 28;
+  ctx.shadowOffsetY = 8;
+  ctx.fillStyle = "rgba(255, 255, 255, 0.74)";
+  ctx.fillRect(x - 3, y - 3, drawWidth + 6, drawHeight + 6);
+  ctx.shadowColor = "transparent";
+  ctx.drawImage(rasterCanvas, x, y, drawWidth, drawHeight);
+  ctx.strokeStyle = "rgba(165, 153, 138, 0.38)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x - 0.5, y - 0.5, drawWidth + 1, drawHeight + 1);
   ctx.restore();
 }
 
 export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const boardRef = useRef<BoardLayout | null>(null);
+  const rasterCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const viewRef = useRef<ViewState>({ ...DEFAULT_VIEW });
-  const dragRef = useRef<{ mode: "pan" | "rotate"; lastX: number; lastY: number } | null>(null);
+  const dragRef = useRef<{ lastX: number; lastY: number } | null>(null);
   const dprRef = useRef(1);
 
-  const frame = useMemo(() => simView.frames[frameIndex], [simView, frameIndex]);
-  const displayGrid = useMemo(
-    () => ({
-      rows: simView.grid.rows * DISPLAY_SUBDIVISION,
-      cols: simView.grid.cols * DISPLAY_SUBDIVISION,
-    }),
-    [simView],
-  );
+  const baseRaster = useMemo(() => buildBaseRaster(simView), [simView]);
+  const frameImage = useMemo(() => buildFrameImage(baseRaster, simView.frames[frameIndex]), [baseRaster, frameIndex, simView]);
 
-  const renderFrame = useMemo(
+  const render = useMemo(
     () => () => {
       const container = containerRef.current;
       const canvas = canvasRef.current;
-      const board = boardRef.current;
-      if (!container || !canvas || !board) {
+      if (!container || !canvas) {
         return;
       }
-
       const ctx = canvas.getContext("2d");
       if (!ctx) {
         return;
@@ -493,129 +322,22 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
 
       const width = container.clientWidth;
       const height = container.clientHeight;
-      const scene = DAY_SCENE;
-      ctx.clearRect(0, 0, width, height);
-      ctx.fillStyle = scene.bg;
-      ctx.fillRect(0, 0, width, height);
-
-      const view = viewRef.current;
-      ctx.save();
-      ctx.translate(view.offsetX, view.offsetY);
-      ctx.scale(view.scale, view.scale);
-      ctx.translate(board.originX, board.originY);
-      ctx.rotate(view.rotation);
-      ctx.translate(-board.originX, -board.originY);
-
-      const rows = displayGrid.rows;
-      const cols = displayGrid.cols;
-      const coarseRows = simView.grid.rows;
-      const coarseCols = simView.grid.cols;
-      const farmlandEnv = simView.env?.farmland ?? [];
-      const ecoEnv = simView.env?.eco ?? [];
-      const cells: Array<{
-        row: number;
-        col: number;
-        kind: number;
-        density: number;
-        heightValue: number;
-        farmNearby: number;
-        ecoNearby: number;
-        x: number;
-        y: number;
-      }> = [];
-      const settlementCells: Array<{
-        row: number;
-        col: number;
-        density: number;
-        heightValue: number;
-        x: number;
-        y: number;
-      }> = [];
-
-      const settlementMask = frame.tiles.map((row) => row.map((value) => (value === 4 || value === 5 ? 1 : 0)));
-      const waterMask = frame.tiles.map((row) => row.map((value) => (value === 2 ? 1 : 0)));
-      const farmMask = frame.tiles.map((row, rowIndex) =>
-        row.map((value, colIndex) => (value === 1 || (farmlandEnv[rowIndex]?.[colIndex] ?? 0) > 0 ? 1 : 0)),
-      );
-      const ecoMask = frame.tiles.map((row, rowIndex) =>
-        row.map((value, colIndex) => (value === 3 || (ecoEnv[rowIndex]?.[colIndex] ?? 0) > 0 ? 1 : 0)),
-      );
-
-      for (let row = 0; row < rows; row += 1) {
-        for (let col = 0; col < cols; col += 1) {
-          const rowPos = (row + 0.5) / DISPLAY_SUBDIVISION - 0.5;
-          const colPos = (col + 0.5) / DISPLAY_SUBDIVISION - 0.5;
-          const waterScore = bilinearSample(waterMask, rowPos, colPos, 0);
-          const ecoScore = bilinearSample(ecoMask, rowPos, colPos, 0);
-          const farmScore = bilinearSample(farmMask, rowPos, colPos, 0);
-          let kind = 0;
-          if (waterScore >= 0.3) {
-            kind = 2;
-          } else if (ecoScore >= 0.42) {
-            kind = 3;
-          } else if (farmScore >= 0.38) {
-            kind = 1;
-          }
-          const density = bilinearSample(frame.density, rowPos, colPos, 0);
-          const heightValue = bilinearSample(frame.height, rowPos, colPos, density);
-          const farmNearby = farmScore;
-          const ecoNearby = ecoScore;
-          const { x, y } = isoPoint(row, col, board);
-          cells.push({ row, col, kind, density, heightValue, farmNearby, ecoNearby, x, y });
-        }
+      let rasterCanvas = rasterCanvasRef.current;
+      if (!rasterCanvas) {
+        rasterCanvas = document.createElement("canvas");
+        rasterCanvasRef.current = rasterCanvas;
       }
-
-      for (let row = 0; row < coarseRows; row += 1) {
-        for (let col = 0; col < coarseCols; col += 1) {
-          const kind = frame.tiles[row][col];
-          if (kind !== 4 && kind !== 5) {
-            continue;
-          }
-          const density = frame.density?.[row]?.[col] ?? 0;
-          const heightValue = frame.height?.[row]?.[col] ?? density;
-          const subCenterRow = row * DISPLAY_SUBDIVISION + (DISPLAY_SUBDIVISION - 1) * 0.5;
-          const subCenterCol = col * DISPLAY_SUBDIVISION + (DISPLAY_SUBDIVISION - 1) * 0.5;
-          const { x, y } = isoPoint(subCenterRow, subCenterCol, board);
-          settlementCells.push({ row, col, density, heightValue, x, y });
-        }
+      rasterCanvas.width = baseRaster.cols;
+      rasterCanvas.height = baseRaster.rows;
+      const rasterCtx = rasterCanvas.getContext("2d");
+      if (!rasterCtx) {
+        return;
       }
+      rasterCtx.putImageData(frameImage, 0, 0);
 
-      const structureBoard: BoardLayout = {
-        ...board,
-        tileW: board.tileW * DISPLAY_SUBDIVISION,
-        tileH: board.tileH * DISPLAY_SUBDIVISION,
-      };
-
-      cells
-        .sort((a, b) => (a.y === b.y ? a.x - b.x : a.y - b.y))
-        .forEach((cell) => {
-          if (cell.kind === 2) {
-            drawWaterTile(ctx, cell.x, cell.y, board, scene);
-            return;
-          }
-
-          if (cell.kind === 4) {
-            drawSettlement(ctx, cell.x, cell.y, cell.density, cell.heightValue, cell.row, cell.col, board, scene);
-            return;
-          }
-
-          if (cell.kind === 1) {
-            drawFarmland(ctx, cell.x, cell.y, cell.row, cell.col, board, scene);
-          } else if (cell.kind === 3 || cell.ecoNearby) {
-            drawEco(ctx, cell.x, cell.y, cell.row, cell.col, board, scene);
-          } else {
-            drawBare(ctx, cell.x, cell.y, board, scene);
-          }
-        });
-
-      settlementCells
-        .sort((a, b) => (a.y === b.y ? a.x - b.x : a.y - b.y))
-        .forEach((cell) => {
-          drawSettlement(ctx, cell.x, cell.y, cell.density, cell.heightValue, cell.row, cell.col, structureBoard, scene);
-        });
-      ctx.restore();
+      drawScene(ctx, rasterCanvas, width, height, viewRef.current, baseRaster.rows, baseRaster.cols);
     },
-    [displayGrid, frame, simView],
+    [baseRaster.cols, baseRaster.rows, frameImage],
   );
 
   useEffect(() => {
@@ -637,8 +359,7 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
         return;
       }
       ctx.setTransform(dprRef.current, 0, 0, dprRef.current, 0, 0);
-      boardRef.current = computeBoardLayout(width, height, displayGrid.rows, displayGrid.cols);
-      renderFrame();
+      render();
     };
 
     resize();
@@ -651,46 +372,34 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
       observer.disconnect();
       window.removeEventListener("resize", resize);
     };
-  }, [displayGrid, renderFrame]);
+  }, [render]);
 
   useEffect(() => {
-    renderFrame();
-  }, [frameIndex, renderFrame]);
+    render();
+  }, [render]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) {
+    const container = containerRef.current;
+    if (!canvas || !container) {
       return;
     }
 
     const onPointerDown = (event: PointerEvent) => {
       event.preventDefault();
       canvas.setPointerCapture(event.pointerId);
-      dragRef.current = {
-        mode: event.button === 1 || event.shiftKey ? "pan" : "rotate",
-        lastX: event.clientX,
-        lastY: event.clientY,
-      };
-      canvas.style.cursor = dragRef.current.mode === "rotate" ? "grabbing" : "move";
+      dragRef.current = { lastX: event.clientX, lastY: event.clientY };
+      canvas.style.cursor = "grabbing";
     };
 
     const onPointerMove = (event: PointerEvent) => {
       if (!dragRef.current) {
         return;
       }
-      const { lastX, lastY, mode } = dragRef.current;
-      const dx = event.clientX - lastX;
-      const dy = event.clientY - lastY;
-      if (mode === "rotate") {
-        viewRef.current.rotation += dx * 0.008;
-        viewRef.current.offsetY += dy * 0.18;
-      } else {
-        viewRef.current.offsetX += dx;
-        viewRef.current.offsetY += dy;
-      }
-      dragRef.current.lastX = event.clientX;
-      dragRef.current.lastY = event.clientY;
-      renderFrame();
+      viewRef.current.offsetX += event.clientX - dragRef.current.lastX;
+      viewRef.current.offsetY += event.clientY - dragRef.current.lastY;
+      dragRef.current = { lastX: event.clientX, lastY: event.clientY };
+      render();
     };
 
     const stopDragging = () => {
@@ -700,26 +409,35 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
 
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
-      const previous = viewRef.current.scale;
-      const next = clamp(previous * (event.deltaY < 0 ? 1.08 : 0.92), 0.74, 2.6);
-      if (Math.abs(previous - next) < 1e-6) {
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+      const fitScale = computeFitScale(width, height, baseRaster.cols, baseRaster.rows);
+      const previousZoom = viewRef.current.zoom;
+      const nextZoom = clamp(previousZoom * (event.deltaY < 0 ? 1.08 : 0.92), MIN_ZOOM, MAX_ZOOM);
+      if (Math.abs(nextZoom - previousZoom) < 0.0001) {
         return;
       }
-      const wx = (event.clientX - viewRef.current.offsetX) / previous;
-      const wy = (event.clientY - viewRef.current.offsetY) / previous;
-      viewRef.current.scale = next;
-      viewRef.current.offsetX = event.clientX - wx * next;
-      viewRef.current.offsetY = event.clientY - wy * next;
-      renderFrame();
+
+      const prevWidth = baseRaster.cols * fitScale * previousZoom;
+      const prevHeight = baseRaster.rows * fitScale * previousZoom;
+      const prevX = (width - prevWidth) / 2 + viewRef.current.offsetX;
+      const prevY = (height - prevHeight) / 2 + viewRef.current.offsetY;
+      const localX = clamp((event.offsetX - prevX) / Math.max(1, prevWidth));
+      const localY = clamp((event.offsetY - prevY) / Math.max(1, prevHeight));
+
+      viewRef.current.zoom = nextZoom;
+      const nextWidth = baseRaster.cols * fitScale * nextZoom;
+      const nextHeight = baseRaster.rows * fitScale * nextZoom;
+      const nextX = event.offsetX - localX * nextWidth;
+      const nextY = event.offsetY - localY * nextHeight;
+      viewRef.current.offsetX = nextX - (width - nextWidth) / 2;
+      viewRef.current.offsetY = nextY - (height - nextHeight) / 2;
+      render();
     };
 
     const onDoubleClick = () => {
       viewRef.current = { ...DEFAULT_VIEW };
-      renderFrame();
-    };
-
-    const onContextMenu = (event: MouseEvent) => {
-      event.preventDefault();
+      render();
     };
 
     canvas.addEventListener("pointerdown", onPointerDown);
@@ -728,7 +446,6 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
     canvas.addEventListener("pointerleave", stopDragging);
     canvas.addEventListener("wheel", onWheel, { passive: false });
     canvas.addEventListener("dblclick", onDoubleClick);
-    canvas.addEventListener("contextmenu", onContextMenu);
     canvas.style.cursor = "grab";
 
     return () => {
@@ -738,40 +455,36 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
       canvas.removeEventListener("pointerleave", stopDragging);
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("dblclick", onDoubleClick);
-      canvas.removeEventListener("contextmenu", onContextMenu);
     };
-  }, [renderFrame]);
+  }, [baseRaster.cols, baseRaster.rows, render]);
 
   const adjustZoom = (factor: number) => {
-    viewRef.current.scale = clamp(viewRef.current.scale * factor, 0.74, 2.6);
-    renderFrame();
+    viewRef.current.zoom = clamp(viewRef.current.zoom * factor, MIN_ZOOM, MAX_ZOOM);
+    render();
   };
 
-  const adjustRotation = (delta: number) => {
-    viewRef.current.rotation += delta;
-    renderFrame();
+  const fitView = () => {
+    viewRef.current = { zoom: 1, offsetX: 0, offsetY: 0 };
+    render();
   };
 
   const resetView = () => {
     viewRef.current = { ...DEFAULT_VIEW };
-    renderFrame();
+    render();
   };
 
   return (
     <div ref={containerRef} className="scene-pane scene-pane--canvas">
       <canvas ref={canvasRef} />
       <div className="scene-controls" aria-label="View controls">
-        <button type="button" onClick={() => adjustZoom(1.12)} aria-label="Zoom in">
+        <button type="button" onClick={() => adjustZoom(1.14)} aria-label="Zoom in">
           +
         </button>
-        <button type="button" onClick={() => adjustZoom(0.9)} aria-label="Zoom out">
+        <button type="button" onClick={() => adjustZoom(0.88)} aria-label="Zoom out">
           −
         </button>
-        <button type="button" onClick={() => adjustRotation(-0.18)} aria-label="Rotate left">
-          ⟲
-        </button>
-        <button type="button" onClick={() => adjustRotation(0.18)} aria-label="Rotate right">
-          ⟳
+        <button type="button" onClick={fitView}>
+          Fit
         </button>
         <button type="button" className="scene-controls__reset" onClick={resetView}>
           Reset
