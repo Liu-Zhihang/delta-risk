@@ -63,11 +63,13 @@ type ViewState = {
   rotation: number;
 };
 
+const DISPLAY_SUBDIVISION = 2;
+
 const DEFAULT_VIEW: ViewState = {
-  scale: 1.36,
-  offsetX: -120,
-  offsetY: 0,
-  rotation: 0.82,
+  scale: 1.82,
+  offsetX: -250,
+  offsetY: 22,
+  rotation: 0.06,
 };
 
 const DAY_SCENE: ScenePalette = {
@@ -110,9 +112,7 @@ function hash01(a: number, b: number, c = 0) {
   return value - Math.floor(value);
 }
 
-function computeBoardLayout(width: number, height: number, simView: SimViewData): BoardLayout {
-  const rows = simView.grid.rows;
-  const cols = simView.grid.cols;
+function computeBoardLayout(width: number, height: number, rows: number, cols: number): BoardLayout {
   const availW = width * 0.98;
   const availH = height * 0.88;
   const tileWByWidth = availW / ((rows + cols) * 0.54);
@@ -134,6 +134,31 @@ function computeBoardLayout(width: number, height: number, simView: SimViewData)
     centerRow: (rows - 1) / 2,
     centerCol: (cols - 1) / 2,
   };
+}
+
+function clampIndex(value: number, max: number) {
+  return Math.max(0, Math.min(max, value));
+}
+
+function bilinearSample(grid: number[][] | undefined, rowPos: number, colPos: number, fallback = 0) {
+  if (!grid?.length || !grid[0]?.length) {
+    return fallback;
+  }
+  const maxRow = grid.length - 1;
+  const maxCol = grid[0].length - 1;
+  const r0 = clampIndex(Math.floor(rowPos), maxRow);
+  const c0 = clampIndex(Math.floor(colPos), maxCol);
+  const r1 = clampIndex(r0 + 1, maxRow);
+  const c1 = clampIndex(c0 + 1, maxCol);
+  const tr = Math.max(0, Math.min(1, rowPos - Math.floor(rowPos)));
+  const tc = Math.max(0, Math.min(1, colPos - Math.floor(colPos)));
+  const v00 = grid[r0]?.[c0] ?? fallback;
+  const v01 = grid[r0]?.[c1] ?? fallback;
+  const v10 = grid[r1]?.[c0] ?? fallback;
+  const v11 = grid[r1]?.[c1] ?? fallback;
+  const top = v00 * (1 - tc) + v01 * tc;
+  const bottom = v10 * (1 - tc) + v11 * tc;
+  return top * (1 - tr) + bottom * tr;
 }
 
 function isoPoint(r: number, c: number, board: BoardLayout) {
@@ -444,6 +469,13 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
   const dprRef = useRef(1);
 
   const frame = useMemo(() => simView.frames[frameIndex], [simView, frameIndex]);
+  const displayGrid = useMemo(
+    () => ({
+      rows: simView.grid.rows * DISPLAY_SUBDIVISION,
+      cols: simView.grid.cols * DISPLAY_SUBDIVISION,
+    }),
+    [simView],
+  );
 
   const renderFrame = useMemo(
     () => () => {
@@ -474,8 +506,10 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
       ctx.rotate(view.rotation);
       ctx.translate(-board.originX, -board.originY);
 
-      const rows = simView.grid.rows;
-      const cols = simView.grid.cols;
+      const rows = displayGrid.rows;
+      const cols = displayGrid.cols;
+      const coarseRows = simView.grid.rows;
+      const coarseCols = simView.grid.cols;
       const farmlandEnv = simView.env?.farmland ?? [];
       const ecoEnv = simView.env?.eco ?? [];
       const cells: Array<{
@@ -489,18 +523,68 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
         x: number;
         y: number;
       }> = [];
+      const settlementCells: Array<{
+        row: number;
+        col: number;
+        density: number;
+        heightValue: number;
+        x: number;
+        y: number;
+      }> = [];
+
+      const settlementMask = frame.tiles.map((row) => row.map((value) => (value === 4 || value === 5 ? 1 : 0)));
+      const waterMask = frame.tiles.map((row) => row.map((value) => (value === 2 ? 1 : 0)));
+      const farmMask = frame.tiles.map((row, rowIndex) =>
+        row.map((value, colIndex) => (value === 1 || (farmlandEnv[rowIndex]?.[colIndex] ?? 0) > 0 ? 1 : 0)),
+      );
+      const ecoMask = frame.tiles.map((row, rowIndex) =>
+        row.map((value, colIndex) => (value === 3 || (ecoEnv[rowIndex]?.[colIndex] ?? 0) > 0 ? 1 : 0)),
+      );
 
       for (let row = 0; row < rows; row += 1) {
         for (let col = 0; col < cols; col += 1) {
-          const kind = frame.tiles[row][col];
-          const density = frame.density?.[row]?.[col] ?? 0;
-          const heightValue = frame.height?.[row]?.[col] ?? density;
-          const farmNearby = farmlandEnv[row]?.[col] ?? 0;
-          const ecoNearby = ecoEnv[row]?.[col] ?? 0;
+          const rowPos = (row + 0.5) / DISPLAY_SUBDIVISION - 0.5;
+          const colPos = (col + 0.5) / DISPLAY_SUBDIVISION - 0.5;
+          const waterScore = bilinearSample(waterMask, rowPos, colPos, 0);
+          const ecoScore = bilinearSample(ecoMask, rowPos, colPos, 0);
+          const farmScore = bilinearSample(farmMask, rowPos, colPos, 0);
+          let kind = 0;
+          if (waterScore >= 0.3) {
+            kind = 2;
+          } else if (ecoScore >= 0.42) {
+            kind = 3;
+          } else if (farmScore >= 0.38) {
+            kind = 1;
+          }
+          const density = bilinearSample(frame.density, rowPos, colPos, 0);
+          const heightValue = bilinearSample(frame.height, rowPos, colPos, density);
+          const farmNearby = farmScore;
+          const ecoNearby = ecoScore;
           const { x, y } = isoPoint(row, col, board);
           cells.push({ row, col, kind, density, heightValue, farmNearby, ecoNearby, x, y });
         }
       }
+
+      for (let row = 0; row < coarseRows; row += 1) {
+        for (let col = 0; col < coarseCols; col += 1) {
+          const kind = frame.tiles[row][col];
+          if (kind !== 4 && kind !== 5) {
+            continue;
+          }
+          const density = frame.density?.[row]?.[col] ?? 0;
+          const heightValue = frame.height?.[row]?.[col] ?? density;
+          const subCenterRow = row * DISPLAY_SUBDIVISION + (DISPLAY_SUBDIVISION - 1) * 0.5;
+          const subCenterCol = col * DISPLAY_SUBDIVISION + (DISPLAY_SUBDIVISION - 1) * 0.5;
+          const { x, y } = isoPoint(subCenterRow, subCenterCol, board);
+          settlementCells.push({ row, col, density, heightValue, x, y });
+        }
+      }
+
+      const structureBoard: BoardLayout = {
+        ...board,
+        tileW: board.tileW * DISPLAY_SUBDIVISION,
+        tileH: board.tileH * DISPLAY_SUBDIVISION,
+      };
 
       cells
         .sort((a, b) => (a.y === b.y ? a.x - b.x : a.y - b.y))
@@ -523,9 +607,15 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
             drawBare(ctx, cell.x, cell.y, board, scene);
           }
         });
+
+      settlementCells
+        .sort((a, b) => (a.y === b.y ? a.x - b.x : a.y - b.y))
+        .forEach((cell) => {
+          drawSettlement(ctx, cell.x, cell.y, cell.density, cell.heightValue, cell.row, cell.col, structureBoard, scene);
+        });
       ctx.restore();
     },
-    [frame, simView],
+    [displayGrid, frame, simView],
   );
 
   useEffect(() => {
@@ -547,7 +637,7 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
         return;
       }
       ctx.setTransform(dprRef.current, 0, 0, dprRef.current, 0, 0);
-      boardRef.current = computeBoardLayout(width, height, simView);
+      boardRef.current = computeBoardLayout(width, height, displayGrid.rows, displayGrid.cols);
       renderFrame();
     };
 
@@ -561,7 +651,7 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
       observer.disconnect();
       window.removeEventListener("resize", resize);
     };
-  }, [renderFrame, simView]);
+  }, [displayGrid, renderFrame]);
 
   useEffect(() => {
     renderFrame();
