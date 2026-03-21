@@ -19,13 +19,13 @@ const SCENE_META: Record<
   }
 > = {
   nature: {
-    toggle: "Hazard Pattern",
-    title: "Hazard-Constrained Delta Growth",
+    toggle: "Hazard Structure",
+    title: "Emergence of Hazard-Constrained Delta Substructures",
     metrics: ["linearity", "lowRedundancy", "exposureConcentration", "lockInScore"],
   },
   cities: {
-    toggle: "Corridor Pattern",
-    title: "River-Constrained Delta Growth",
+    toggle: "Corridor Emergence",
+    title: "Emergence of River-Constrained Corridor Urbanization",
     metrics: ["rccuScore", "nearWaterCoupling", "croplandEmbedding", "emergenceCurve"],
   },
 };

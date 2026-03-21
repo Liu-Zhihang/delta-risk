@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { LayerKey, SandboxControls, ScenePayload, SimViewData, SimViewFrame, TrackId, ViewMode } from "../types";
+import type { LayerKey, SandboxControls, ScenePayload, SimViewData, TrackId, ViewMode } from "../types";
 
 type SceneViewportProps = {
   scene: ScenePayload;
@@ -13,285 +13,261 @@ type SceneViewportProps = {
   layers: Record<LayerKey, boolean>;
 };
 
-type Matrix = number[][];
-type Rgb = [number, number, number];
-
 type ViewState = {
   zoom: number;
   offsetX: number;
   offsetY: number;
 };
 
-type BaseRaster = {
+type FlatBundleMeta = {
   rows: number;
   cols: number;
-  pixels: Uint8ClampedArray;
+  frameCount: number;
+  indices: number[];
+  timeValues: number[];
+  urbanFrac: number[];
+  offsets: {
+    water: number;
+    farmland: number;
+    eco: number;
+    dikes: number;
+    frames: number[];
+  };
+  sizes: {
+    layerBytes: number;
+    frameBytes: number;
+  };
 };
 
-const DEFAULT_VIEW: ViewState = {
-  zoom: 1,
-  offsetX: -4,
-  offsetY: 0,
+type FlatBundle = {
+  meta: FlatBundleMeta;
+  bytes: Uint8Array;
+  basePixels: Uint8ClampedArray;
 };
 
-const MIN_ZOOM = 0.82;
-const MAX_ZOOM = 4.2;
+const META_URL = "data/rccu_flat_bundle.json";
+const BUNDLE_URL = "assets/rccu_flat_bundle.bin";
+const MIN_ZOOM = 0.84;
+const MAX_ZOOM = 3.4;
+const DEFAULT_VIEW: ViewState = { zoom: 1, offsetX: 0, offsetY: 0 };
 
 const COLORS = {
-  background: "#f1ede6",
-  bare: [239, 235, 233] as Rgb,
-  farmLight: [165, 214, 167] as Rgb,
-  farmMid: [102, 187, 106] as Rgb,
-  ecoMid: [46, 125, 50] as Rgb,
-  ecoDeep: [27, 94, 32] as Rgb,
-  dike: [120, 144, 156] as Rgb,
-  waterMid: [33, 150, 243] as Rgb,
-  waterDeep: [21, 101, 192] as Rgb,
+  bg: "#f3efe7",
+  bare: [239, 235, 233] as const,
+  farmLight: [165, 214, 167] as const,
+  farmMid: [102, 187, 106] as const,
+  ecoMid: [46, 125, 50] as const,
+  ecoDeep: [27, 94, 32] as const,
+  dike: [120, 144, 156] as const,
+  waterMid: [33, 150, 243] as const,
+  waterDeep: [21, 101, 192] as const,
 };
 
-const URBAN_RAMP = [
-  { position: 0.0, color: [239, 235, 233] as Rgb, alpha: 0.0 },
-  { position: 0.12, color: [239, 235, 233] as Rgb, alpha: 0.0 },
-  { position: 0.25, color: [255, 171, 145] as Rgb, alpha: 0.6 },
-  { position: 0.45, color: [255, 112, 67] as Rgb, alpha: 0.8 },
-  { position: 0.6, color: [244, 81, 30] as Rgb, alpha: 0.9 },
-  { position: 0.78, color: [230, 74, 25] as Rgb, alpha: 0.95 },
-  { position: 1.0, color: [191, 54, 12] as Rgb, alpha: 1.0 },
+const URBAN_STOPS = [0.0, 0.12, 0.25, 0.45, 0.60, 0.78, 1.0] as const;
+const URBAN_RGBA = [
+  [239, 235, 233, 0.0],
+  [239, 235, 233, 0.0],
+  [255, 171, 145, 0.60],
+  [255, 112, 67, 0.80],
+  [244, 81, 30, 0.90],
+  [230, 74, 25, 0.95],
+  [191, 54, 12, 1.0],
 ] as const;
 
 function clamp(value: number, min = 0, max = 1) {
   return Math.max(min, Math.min(max, value));
 }
 
-function createMatrix(rows: number, cols: number, fill = 0): Matrix {
-  return Array.from({ length: rows }, () => Array(cols).fill(fill));
+function lerp(a: number, b: number, t: number) {
+  return a + (b - a) * t;
 }
 
-function copyMatrix(matrix: Matrix): Matrix {
-  return matrix.map((row) => [...row]);
+function readLayer(bytes: Uint8Array, offset: number, size: number) {
+  return bytes.subarray(offset, offset + size);
 }
 
-function matrixFromPredicate(tiles: number[][], predicate: (kind: number) => boolean): Matrix {
-  return tiles.map((row) => row.map((kind) => (predicate(kind) ? 1 : 0)));
-}
-
-function blurPass(input: Matrix, radius: number): Matrix {
+function blurLayer(layer: Uint8Array, cols: number, rows: number, radius: number) {
   if (radius <= 0) {
-    return copyMatrix(input);
+    return new Uint8Array(layer);
   }
 
-  const rows = input.length;
-  const cols = input[0]?.length ?? 0;
-  const horizontal = createMatrix(rows, cols, 0);
-  const vertical = createMatrix(rows, cols, 0);
+  const horizontal = new Float32Array(layer.length);
+  const vertical = new Uint8Array(layer.length);
   const window = radius * 2 + 1;
 
   for (let row = 0; row < rows; row += 1) {
     let sum = 0;
-    for (let col = -radius; col <= radius; col += 1) {
-      const sampleCol = Math.max(0, Math.min(cols - 1, col));
-      sum += input[row][sampleCol];
+    for (let offset = -radius; offset <= radius; offset += 1) {
+      const col = Math.max(0, Math.min(cols - 1, offset));
+      sum += layer[row * cols + col];
     }
     for (let col = 0; col < cols; col += 1) {
-      horizontal[row][col] = sum / window;
+      horizontal[row * cols + col] = sum / window;
       const left = Math.max(0, col - radius);
       const right = Math.min(cols - 1, col + radius + 1);
-      sum += input[row][right] - input[row][left];
+      sum += layer[row * cols + right] - layer[row * cols + left];
     }
   }
 
   for (let col = 0; col < cols; col += 1) {
     let sum = 0;
-    for (let row = -radius; row <= radius; row += 1) {
-      const sampleRow = Math.max(0, Math.min(rows - 1, row));
-      sum += horizontal[sampleRow][col];
+    for (let offset = -radius; offset <= radius; offset += 1) {
+      const row = Math.max(0, Math.min(rows - 1, offset));
+      sum += horizontal[row * cols + col];
     }
     for (let row = 0; row < rows; row += 1) {
-      vertical[row][col] = sum / window;
+      vertical[row * cols + col] = Math.round(sum / window);
       const top = Math.max(0, row - radius);
       const bottom = Math.min(rows - 1, row + radius + 1);
-      sum += horizontal[bottom][col] - horizontal[top][col];
+      sum += horizontal[bottom * cols + col] - horizontal[top * cols + col];
     }
   }
 
   return vertical;
 }
 
-function blurMatrix(input: Matrix, radius: number, passes = 1): Matrix {
-  let current = copyMatrix(input);
-  for (let pass = 0; pass < passes; pass += 1) {
-    current = blurPass(current, radius);
-  }
-  return current;
-}
-
-function paintLayer(base: Float32Array, rows: number, cols: number, mask: Matrix, color: Rgb, alpha: number) {
-  for (let row = 0; row < rows; row += 1) {
-    for (let col = 0; col < cols; col += 1) {
-      const weight = clamp(mask[row][col]) * alpha;
-      if (weight <= 0.0001) {
-        continue;
-      }
-      const index = (row * cols + col) * 3;
-      base[index] = base[index] * (1 - weight) + color[0] * weight;
-      base[index + 1] = base[index + 1] * (1 - weight) + color[1] * weight;
-      base[index + 2] = base[index + 2] * (1 - weight) + color[2] * weight;
+function paintLayer(
+  pixels: Float32Array,
+  mask: Uint8Array,
+  color: readonly [number, number, number],
+  alpha: number,
+  pixelCount: number,
+) {
+  for (let index = 0; index < pixelCount; index += 1) {
+    const weight = (mask[index] / 255) * alpha;
+    if (weight <= 0.0001) {
+      continue;
     }
+    const baseIndex = index * 3;
+    pixels[baseIndex] = pixels[baseIndex] * (1 - weight) + color[0] * weight;
+    pixels[baseIndex + 1] = pixels[baseIndex + 1] * (1 - weight) + color[1] * weight;
+    pixels[baseIndex + 2] = pixels[baseIndex + 2] * (1 - weight) + color[2] * weight;
   }
 }
 
-function buildBaseRaster(simView: SimViewData): BaseRaster {
-  const rows = simView.grid.rows;
-  const cols = simView.grid.cols;
-  const frame0 = simView.frames[0];
-
-  const waterBinary = simView.env?.water ?? matrixFromPredicate(frame0.tiles, (kind) => kind === 2);
-  const farmland = simView.env?.farmland ?? matrixFromPredicate(frame0.tiles, (kind) => kind === 1);
-  const eco = simView.env?.eco ?? matrixFromPredicate(frame0.tiles, (kind) => kind === 3);
-
-  const waterField = blurMatrix(waterBinary, 2, 3);
-  const farmSoft = blurMatrix(farmland, 1, 2);
-  const ecoSoft = blurMatrix(eco, 1, 2);
-  const dikes = createMatrix(rows, cols, 0);
-
-  for (let row = 0; row < rows; row += 1) {
-    for (let col = 0; col < cols; col += 1) {
-      dikes[row][col] = clamp((waterField[row][col] - waterBinary[row][col] * 0.78 - 0.06) * 1.7);
-    }
+function buildBasePixels(meta: FlatBundleMeta, bytes: Uint8Array) {
+  const pixelCount = meta.rows * meta.cols;
+  const pixels = new Float32Array(pixelCount * 3);
+  for (let index = 0; index < pixelCount; index += 1) {
+    const baseIndex = index * 3;
+    pixels[baseIndex] = COLORS.bare[0];
+    pixels[baseIndex + 1] = COLORS.bare[1];
+    pixels[baseIndex + 2] = COLORS.bare[2];
   }
 
-  const base = new Float32Array(rows * cols * 3);
-  for (let index = 0; index < rows * cols; index += 1) {
-    base[index * 3] = COLORS.bare[0];
-    base[index * 3 + 1] = COLORS.bare[1];
-    base[index * 3 + 2] = COLORS.bare[2];
+  const farmland = blurLayer(readLayer(bytes, meta.offsets.farmland, meta.sizes.layerBytes), meta.cols, meta.rows, 1);
+  const eco = blurLayer(readLayer(bytes, meta.offsets.eco, meta.sizes.layerBytes), meta.cols, meta.rows, 1);
+  const dikes = blurLayer(readLayer(bytes, meta.offsets.dikes, meta.sizes.layerBytes), meta.cols, meta.rows, 1);
+  const water = blurLayer(readLayer(bytes, meta.offsets.water, meta.sizes.layerBytes), meta.cols, meta.rows, 2);
+
+  paintLayer(pixels, farmland, COLORS.farmLight, 0.85, pixelCount);
+  const farmlandBoost = new Uint8Array(farmland.length);
+  const ecoCore = new Uint8Array(eco.length);
+  const waterCore = new Uint8Array(water.length);
+  for (let index = 0; index < pixelCount; index += 1) {
+    farmlandBoost[index] = Math.min(255, farmland[index] * 1.5);
+    ecoCore[index] = Math.max(0, Math.min(255, (eco[index] - 77) * 2));
+    waterCore[index] = Math.max(0, Math.min(255, (water[index] - 140) * 3));
   }
+  paintLayer(pixels, farmlandBoost, COLORS.farmMid, 0.45, pixelCount);
+  paintLayer(pixels, eco, COLORS.ecoMid, 0.80, pixelCount);
+  paintLayer(pixels, ecoCore, COLORS.ecoDeep, 0.50, pixelCount);
+  paintLayer(pixels, dikes, COLORS.dike, 0.40, pixelCount);
+  paintLayer(pixels, water, COLORS.waterMid, 0.95, pixelCount);
+  paintLayer(pixels, waterCore, COLORS.waterDeep, 0.60, pixelCount);
 
-  paintLayer(base, rows, cols, farmSoft, COLORS.farmLight, 0.85);
-  paintLayer(
-    base,
-    rows,
-    cols,
-    farmSoft.map((row) => row.map((value) => clamp(value * 1.5))),
-    COLORS.farmMid,
-    0.45,
-  );
-  paintLayer(base, rows, cols, ecoSoft, COLORS.ecoMid, 0.8);
-  paintLayer(
-    base,
-    rows,
-    cols,
-    ecoSoft.map((row) => row.map((value) => clamp((value - 0.25) * 1.8))),
-    COLORS.ecoDeep,
-    0.5,
-  );
-  paintLayer(base, rows, cols, dikes, COLORS.dike, 0.28);
-  paintLayer(base, rows, cols, waterBinary, COLORS.waterMid, 0.96);
-  paintLayer(
-    base,
-    rows,
-    cols,
-    waterField.map((row) => row.map((value) => clamp((value - 0.34) * 2.3))),
-    COLORS.waterDeep,
-    0.58,
-  );
-
-  const pixels = new Uint8ClampedArray(rows * cols * 4);
-  for (let row = 0; row < rows; row += 1) {
-    for (let col = 0; col < cols; col += 1) {
-      const source = (row * cols + col) * 3;
-      const target = (row * cols + col) * 4;
-      pixels[target] = Math.round(clamp(base[source], 0, 255));
-      pixels[target + 1] = Math.round(clamp(base[source + 1], 0, 255));
-      pixels[target + 2] = Math.round(clamp(base[source + 2], 0, 255));
-      pixels[target + 3] = 255;
-    }
+  const out = new Uint8ClampedArray(pixelCount * 4);
+  for (let index = 0; index < pixelCount; index += 1) {
+    const src = index * 3;
+    const dst = index * 4;
+    out[dst] = Math.round(clamp(pixels[src], 0, 255));
+    out[dst + 1] = Math.round(clamp(pixels[src + 1], 0, 255));
+    out[dst + 2] = Math.round(clamp(pixels[src + 2], 0, 255));
+    out[dst + 3] = 255;
   }
-
-  return { rows, cols, pixels };
+  return out;
 }
 
-function sampleUrbanRamp(value: number) {
+function sampleUrbanColor(value: number) {
   const clamped = clamp(value);
-  for (let index = 0; index < URBAN_RAMP.length - 1; index += 1) {
-    const start = URBAN_RAMP[index];
-    const end = URBAN_RAMP[index + 1];
-    if (clamped <= end.position) {
-      const span = Math.max(0.0001, end.position - start.position);
-      const t = clamp((clamped - start.position) / span);
+  for (let index = 0; index < URBAN_STOPS.length - 1; index += 1) {
+    const start = URBAN_STOPS[index];
+    const end = URBAN_STOPS[index + 1];
+    if (clamped <= end) {
+      const t = clamp((clamped - start) / Math.max(0.0001, end - start));
       return {
-        color: [
-          start.color[0] + (end.color[0] - start.color[0]) * t,
-          start.color[1] + (end.color[1] - start.color[1]) * t,
-          start.color[2] + (end.color[2] - start.color[2]) * t,
-        ] as Rgb,
-        alpha: start.alpha + (end.alpha - start.alpha) * t,
+        r: lerp(URBAN_RGBA[index][0], URBAN_RGBA[index + 1][0], t),
+        g: lerp(URBAN_RGBA[index][1], URBAN_RGBA[index + 1][1], t),
+        b: lerp(URBAN_RGBA[index][2], URBAN_RGBA[index + 1][2], t),
+        a: lerp(URBAN_RGBA[index][3], URBAN_RGBA[index + 1][3], t),
       };
     }
   }
-
-  const last = URBAN_RAMP[URBAN_RAMP.length - 1];
-  return { color: last.color, alpha: last.alpha };
+  const last = URBAN_RGBA[URBAN_RGBA.length - 1];
+  return { r: last[0], g: last[1], b: last[2], a: last[3] };
 }
 
-function buildFrameImage(baseRaster: BaseRaster, frame: SimViewFrame) {
-  const { rows, cols } = baseRaster;
-  const pixels = new Uint8ClampedArray(baseRaster.pixels);
-  const settlementMask = matrixFromPredicate(frame.tiles, (kind) => kind === 4 || kind === 5);
-  const urbanSoft = blurMatrix(frame.density, 2, 2);
-  const urbanSeeds = blurMatrix(settlementMask, 1, 1);
+function makeImageData(bundle: FlatBundle, selectedFrame: number) {
+  const { meta, bytes, basePixels } = bundle;
+  const frameOffset = meta.offsets.frames[selectedFrame];
+  const field = blurLayer(readLayer(bytes, frameOffset, meta.sizes.frameBytes), meta.cols, meta.rows, 1);
+  const pixels = new Uint8ClampedArray(basePixels);
+  const pixelCount = meta.rows * meta.cols;
 
-  for (let row = 0; row < rows; row += 1) {
-    for (let col = 0; col < cols; col += 1) {
-      const fieldValue = clamp(Math.pow(Math.max(urbanSoft[row][col], urbanSeeds[row][col] * 0.24), 0.86));
-      if (fieldValue <= 0.02) {
-        continue;
-      }
-      const { color, alpha } = sampleUrbanRamp(fieldValue);
-      const index = (row * cols + col) * 4;
-      pixels[index] = Math.round(pixels[index] * (1 - alpha) + color[0] * alpha);
-      pixels[index + 1] = Math.round(pixels[index + 1] * (1 - alpha) + color[1] * alpha);
-      pixels[index + 2] = Math.round(pixels[index + 2] * (1 - alpha) + color[2] * alpha);
+  for (let index = 0; index < pixelCount; index += 1) {
+    const fieldValue = field[index] / 255;
+    if (fieldValue <= 0.01) {
+      continue;
     }
+    const { r, g, b, a } = sampleUrbanColor(fieldValue);
+    const dst = index * 4;
+    pixels[dst] = Math.round(pixels[dst] * (1 - a) + r * a);
+    pixels[dst + 1] = Math.round(pixels[dst + 1] * (1 - a) + g * a);
+    pixels[dst + 2] = Math.round(pixels[dst + 2] * (1 - a) + b * a);
   }
 
-  return new ImageData(pixels, cols, rows);
+  return new ImageData(pixels, meta.cols, meta.rows);
 }
 
-function computeFitScale(width: number, height: number, cols: number, rows: number) {
-  return Math.min((width - 72) / cols, (height - 72) / rows);
+function drawLoading(ctx: CanvasRenderingContext2D, width: number, height: number) {
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = COLORS.bg;
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = "rgba(59, 53, 46, 0.72)";
+  ctx.font = '600 24px "Source Serif 4", serif';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("Loading rendered simulation…", width / 2, height / 2);
 }
 
-function drawScene(
+function renderCanvas(
   ctx: CanvasRenderingContext2D,
   rasterCanvas: HTMLCanvasElement,
   width: number,
   height: number,
   view: ViewState,
-  rows: number,
-  cols: number,
 ) {
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = COLORS.background;
+  ctx.fillStyle = COLORS.bg;
   ctx.fillRect(0, 0, width, height);
 
-  const fitScale = computeFitScale(width, height, cols, rows);
-  const drawWidth = cols * fitScale * view.zoom;
-  const drawHeight = rows * fitScale * view.zoom;
+  const fitScale = Math.min((width - 24) / rasterCanvas.width, (height - 24) / rasterCanvas.height);
+  const drawWidth = rasterCanvas.width * fitScale * view.zoom;
+  const drawHeight = rasterCanvas.height * fitScale * view.zoom;
   const x = (width - drawWidth) / 2 + view.offsetX;
   const y = (height - drawHeight) / 2 + view.offsetY;
 
   ctx.save();
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  ctx.shadowColor = "rgba(106, 93, 76, 0.16)";
-  ctx.shadowBlur = 28;
-  ctx.shadowOffsetY = 8;
-  ctx.fillStyle = "rgba(255, 255, 255, 0.74)";
-  ctx.fillRect(x - 3, y - 3, drawWidth + 6, drawHeight + 6);
+  ctx.shadowColor = "rgba(95, 80, 61, 0.14)";
+  ctx.shadowBlur = 18;
+  ctx.shadowOffsetY = 6;
+  ctx.fillStyle = "rgba(255, 255, 255, 0.82)";
+  ctx.fillRect(x - 2, y - 2, drawWidth + 4, drawHeight + 4);
   ctx.shadowColor = "transparent";
   ctx.drawImage(rasterCanvas, x, y, drawWidth, drawHeight);
-  ctx.strokeStyle = "rgba(165, 153, 138, 0.38)";
+  ctx.strokeStyle = "rgba(214, 205, 193, 0.86)";
   ctx.lineWidth = 1;
   ctx.strokeRect(x - 0.5, y - 0.5, drawWidth + 1, drawHeight + 1);
   ctx.restore();
@@ -304,11 +280,16 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
   const viewRef = useRef<ViewState>({ ...DEFAULT_VIEW });
   const dragRef = useRef<{ lastX: number; lastY: number } | null>(null);
   const dprRef = useRef(1);
+  const bundleRef = useRef<FlatBundle | null>(null);
+  const [ready, setReady] = useState(false);
 
-  const baseRaster = useMemo(() => buildBaseRaster(simView), [simView]);
-  const frameImage = useMemo(() => buildFrameImage(baseRaster, simView.frames[frameIndex]), [baseRaster, frameIndex, simView]);
+  const selectedBundleFrame = useMemo(() => {
+    const totalSceneFrames = Math.max(1, simView.frames.length - 1);
+    const bundleFrames = bundleRef.current?.meta.frameCount ?? simView.frames.length;
+    return Math.round((frameIndex / totalSceneFrames) * Math.max(0, bundleFrames - 1));
+  }, [frameIndex, simView.frames.length]);
 
-  const render = useMemo(
+  const draw = useMemo(
     () => () => {
       const container = containerRef.current;
       const canvas = canvasRef.current;
@@ -319,26 +300,57 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
       if (!ctx) {
         return;
       }
-
       const width = container.clientWidth;
       const height = container.clientHeight;
+      const bundle = bundleRef.current;
+      if (!bundle) {
+        drawLoading(ctx, width, height);
+        return;
+      }
+
       let rasterCanvas = rasterCanvasRef.current;
       if (!rasterCanvas) {
         rasterCanvas = document.createElement("canvas");
         rasterCanvasRef.current = rasterCanvas;
       }
-      rasterCanvas.width = baseRaster.cols;
-      rasterCanvas.height = baseRaster.rows;
+      rasterCanvas.width = bundle.meta.cols;
+      rasterCanvas.height = bundle.meta.rows;
       const rasterCtx = rasterCanvas.getContext("2d");
       if (!rasterCtx) {
         return;
       }
-      rasterCtx.putImageData(frameImage, 0, 0);
-
-      drawScene(ctx, rasterCanvas, width, height, viewRef.current, baseRaster.rows, baseRaster.cols);
+      rasterCtx.putImageData(makeImageData(bundle, selectedBundleFrame), 0, 0);
+      renderCanvas(ctx, rasterCanvas, width, height, viewRef.current);
     },
-    [baseRaster.cols, baseRaster.rows, frameImage],
+    [selectedBundleFrame],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadBundle = async () => {
+      const [metaResponse, binResponse] = await Promise.all([fetch(META_URL), fetch(BUNDLE_URL)]);
+      const meta = (await metaResponse.json()) as FlatBundleMeta;
+      const bytes = new Uint8Array(await binResponse.arrayBuffer());
+      if (cancelled) {
+        return;
+      }
+      bundleRef.current = {
+        meta,
+        bytes,
+        basePixels: buildBasePixels(meta, bytes),
+      };
+      setReady(true);
+    };
+
+    loadBundle().catch((error) => {
+      console.error(error);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const resize = () => {
@@ -359,7 +371,7 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
         return;
       }
       ctx.setTransform(dprRef.current, 0, 0, dprRef.current, 0, 0);
-      render();
+      draw();
     };
 
     resize();
@@ -372,16 +384,15 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
       observer.disconnect();
       window.removeEventListener("resize", resize);
     };
-  }, [render]);
+  }, [draw]);
 
   useEffect(() => {
-    render();
-  }, [render]);
+    draw();
+  }, [draw, frameIndex, ready]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const container = containerRef.current;
-    if (!canvas || !container) {
+    if (!canvas) {
       return;
     }
 
@@ -399,7 +410,7 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
       viewRef.current.offsetX += event.clientX - dragRef.current.lastX;
       viewRef.current.offsetY += event.clientY - dragRef.current.lastY;
       dragRef.current = { lastX: event.clientX, lastY: event.clientY };
-      render();
+      draw();
     };
 
     const stopDragging = () => {
@@ -409,35 +420,14 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
 
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
-      const width = container.clientWidth;
-      const height = container.clientHeight;
-      const fitScale = computeFitScale(width, height, baseRaster.cols, baseRaster.rows);
-      const previousZoom = viewRef.current.zoom;
-      const nextZoom = clamp(previousZoom * (event.deltaY < 0 ? 1.08 : 0.92), MIN_ZOOM, MAX_ZOOM);
-      if (Math.abs(nextZoom - previousZoom) < 0.0001) {
-        return;
-      }
-
-      const prevWidth = baseRaster.cols * fitScale * previousZoom;
-      const prevHeight = baseRaster.rows * fitScale * previousZoom;
-      const prevX = (width - prevWidth) / 2 + viewRef.current.offsetX;
-      const prevY = (height - prevHeight) / 2 + viewRef.current.offsetY;
-      const localX = clamp((event.offsetX - prevX) / Math.max(1, prevWidth));
-      const localY = clamp((event.offsetY - prevY) / Math.max(1, prevHeight));
-
-      viewRef.current.zoom = nextZoom;
-      const nextWidth = baseRaster.cols * fitScale * nextZoom;
-      const nextHeight = baseRaster.rows * fitScale * nextZoom;
-      const nextX = event.offsetX - localX * nextWidth;
-      const nextY = event.offsetY - localY * nextHeight;
-      viewRef.current.offsetX = nextX - (width - nextWidth) / 2;
-      viewRef.current.offsetY = nextY - (height - nextHeight) / 2;
-      render();
+      const next = clamp(viewRef.current.zoom * (event.deltaY < 0 ? 1.08 : 0.92), MIN_ZOOM, MAX_ZOOM);
+      viewRef.current.zoom = next;
+      draw();
     };
 
     const onDoubleClick = () => {
       viewRef.current = { ...DEFAULT_VIEW };
-      render();
+      draw();
     };
 
     canvas.addEventListener("pointerdown", onPointerDown);
@@ -456,31 +446,31 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("dblclick", onDoubleClick);
     };
-  }, [baseRaster.cols, baseRaster.rows, render]);
+  }, [draw]);
 
   const adjustZoom = (factor: number) => {
     viewRef.current.zoom = clamp(viewRef.current.zoom * factor, MIN_ZOOM, MAX_ZOOM);
-    render();
+    draw();
   };
 
   const fitView = () => {
     viewRef.current = { zoom: 1, offsetX: 0, offsetY: 0 };
-    render();
+    draw();
   };
 
   const resetView = () => {
     viewRef.current = { ...DEFAULT_VIEW };
-    render();
+    draw();
   };
 
   return (
     <div ref={containerRef} className="scene-pane scene-pane--canvas">
       <canvas ref={canvasRef} />
       <div className="scene-controls" aria-label="View controls">
-        <button type="button" onClick={() => adjustZoom(1.14)} aria-label="Zoom in">
+        <button type="button" onClick={() => adjustZoom(1.12)} aria-label="Zoom in">
           +
         </button>
-        <button type="button" onClick={() => adjustZoom(0.88)} aria-label="Zoom out">
+        <button type="button" onClick={() => adjustZoom(0.9)} aria-label="Zoom out">
           −
         </button>
         <button type="button" onClick={fitView}>

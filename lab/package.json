@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "generate:data": "node scripts/generate-lab-data.mjs",
+    "generate:data": "node scripts/generate-lab-data.mjs && uv run --with numpy python scripts/export_rccu_flat_assets.py",
     "build": "npm run generate:data && tsc -b && vite build",
     "preview": "vite preview"
   },

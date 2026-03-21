@@ -8,9 +8,10 @@
 ## 目录
 
 - `src/`：React + TypeScript 前端
-- `public/data/`：叙事清单、情景预设、图件模板、标准化 `scene-payload.json`
-- `public/assets/`：首版预览图
+- `public/data/`：叙事清单、情景预设、图件模板、标准化 `scene-payload.json`、`rccu_flat_bundle.json`
+- `public/assets/`：预览图与 `rccu_flat_bundle.bin`
 - `scripts/generate-lab-data.mjs`：从 `../sim_data.json` 生成 `scene-payload.json`
+- `scripts/export_rccu_flat_assets.py`：从 `cities 投稿/数据/rccu_v2/rccu_run.npz` 导出平面连续渲染二进制包
 
 ## 运行
 
@@ -37,7 +38,13 @@ npm run generate:data
 
 1. 读取现有 `sim_data.json`
 2. 生成新的 `public/data/scene-payload.json`
-3. 复制预览图到 `public/assets/`
+3. 通过 `uv run --with numpy` 重新导出 `public/assets/rccu_flat_bundle.bin`
+4. 生成新的 `public/data/rccu_flat_bundle.json`
+
+说明：
+
+- 当前构建依赖本机可用 `uv`
+- 平面连续模拟页面直接使用 `rccu_v2` 的真实高分辨率连续场，不再使用旧的低分辨率块体网页渲染
 
 ## 当前实现范围
 
