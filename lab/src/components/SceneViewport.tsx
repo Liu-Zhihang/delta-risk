@@ -420,79 +420,21 @@ function drawSettlement(
   });
 }
 
-function drawWaterNetwork(
-  ctx: CanvasRenderingContext2D,
-  frame: SimViewData["frames"][number],
-  board: BoardLayout,
-  scene: ScenePalette,
-  rotation: number,
-) {
-  const rows = frame.tiles.length;
-  const cols = frame.tiles[0].length;
+function drawWaterTile(ctx: CanvasRenderingContext2D, x: number, y: number, board: BoardLayout, scene: ScenePalette) {
+  const topY = y - board.tileH * 0.14;
+  drawDiamond(ctx, x, topY, board.tileW * 1.04, board.tileH * 1.04, scene.water, null);
 
-  const hasWater = (row: number, col: number) =>
-    row >= 0 && row < rows && col >= 0 && col < cols && frame.tiles[row][col] === 2;
-
-  const drawSegment = (ax: number, ay: number, bx: number, by: number, width: number) => {
-    ctx.save();
-    ctx.lineCap = "round";
-    ctx.strokeStyle = scene.waterEdge;
-    ctx.lineWidth = width * 1.28;
-    ctx.beginPath();
-    ctx.moveTo(ax, ay);
-    ctx.lineTo(bx, by);
-    ctx.stroke();
-
-    ctx.strokeStyle = scene.water;
-    ctx.lineWidth = width;
-    ctx.beginPath();
-    ctx.moveTo(ax, ay);
-    ctx.lineTo(bx, by);
-    ctx.stroke();
-
-    ctx.strokeStyle = scene.waterShine;
-    ctx.lineWidth = width * 0.18;
-    ctx.beginPath();
-    ctx.moveTo(ax - width * 0.06, ay - width * 0.06);
-    ctx.lineTo(bx - width * 0.06, by - width * 0.06);
-    ctx.stroke();
-    ctx.restore();
-  };
-
-  for (let row = 0; row < rows; row += 1) {
-    for (let col = 0; col < cols; col += 1) {
-      if (!hasWater(row, col)) {
-        continue;
-      }
-      const center = isoPoint(row, col, board, rotation);
-      const density = frame.density?.[row]?.[col] ?? 0;
-      const waterWidth = board.tileH * (0.32 + density * 0.1);
-
-      if (hasWater(row + 1, col)) {
-        const next = isoPoint(row + 1, col, board, rotation);
-        drawSegment(center.x, center.y + board.tileH * 0.02, next.x, next.y + board.tileH * 0.02, waterWidth);
-      }
-      if (hasWater(row, col + 1)) {
-        const next = isoPoint(row, col + 1, board, rotation);
-        drawSegment(center.x, center.y + board.tileH * 0.02, next.x, next.y + board.tileH * 0.02, waterWidth);
-      }
-
-      const branches =
-        Number(hasWater(row - 1, col)) +
-        Number(hasWater(row + 1, col)) +
-        Number(hasWater(row, col - 1)) +
-        Number(hasWater(row, col + 1));
-      drawDiamond(
-        ctx,
-        center.x,
-        center.y + board.tileH * 0.06,
-        board.tileW * (branches >= 3 ? 0.46 : 0.34),
-        board.tileH * (branches >= 3 ? 0.34 : 0.22),
-        scene.water,
-        null,
-      );
-    }
-  }
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = scene.waterShine;
+  ctx.beginPath();
+  ctx.moveTo(x - board.tileW * 0.22, topY - board.tileH * 0.08);
+  ctx.lineTo(x + board.tileW * 0.04, topY - board.tileH * 0.18);
+  ctx.lineTo(x + board.tileW * 0.26, topY - board.tileH * 0.04);
+  ctx.lineTo(x - board.tileW * 0.02, topY + board.tileH * 0.06);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
 }
 
 export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
@@ -562,17 +504,13 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
       cells
         .sort((a, b) => (a.y === b.y ? a.x - b.x : a.y - b.y))
         .forEach((cell) => {
-          if (cell.kind === 4) {
-            drawSettlement(ctx, cell.x, cell.y, cell.density, cell.heightValue, cell.row, cell.col, board, scene);
+          if (cell.kind === 2) {
+            drawWaterTile(ctx, cell.x, cell.y, board, scene);
             return;
           }
 
-          if (cell.kind === 2) {
-            if (cell.farmNearby) {
-              drawFarmland(ctx, cell.x, cell.y, cell.row, cell.col, board, scene);
-            } else {
-              drawBare(ctx, cell.x, cell.y, board, scene);
-            }
+          if (cell.kind === 4) {
+            drawSettlement(ctx, cell.x, cell.y, cell.density, cell.heightValue, cell.row, cell.col, board, scene);
             return;
           }
 
@@ -584,8 +522,6 @@ export function SceneViewport({ simView, frameIndex }: SceneViewportProps) {
             drawBare(ctx, cell.x, cell.y, board, scene);
           }
         });
-
-      drawWaterNetwork(ctx, frame, board, scene, view.rotation);
       ctx.restore();
     },
     [frame, simView],
